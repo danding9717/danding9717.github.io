@@ -1,0 +1,18 @@
+---
+import { getCollection } from 'astro:content';
+import PostPreview from '../components/PostPreview.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { isPublished, sortPosts } from '../utils/posts';
+
+const posts = sortPosts((await getCollection('posts')).filter(isPublished));
+---
+
+<BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
+  <section class="post-list" aria-label="Latest posts">
+    {posts.map((post) => <PostPreview post={post} />)}
+  </section>
+  <p class="archive-entry">
+    <a href="/archive/">ARCHIVE &rarr;</a>
+  </p>
+</BaseLayout>

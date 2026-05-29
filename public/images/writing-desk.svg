@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" role="img" aria-label="A quiet writing desk">
+  <rect width="1200" height="720" fill="#fbfaf7" />
+  <rect x="170" y="132" width="610" height="456" rx="10" fill="#ffffff" stroke="#d8d3ca" stroke-width="3" />
+  <path d="M230 214h430M230 278h372M230 342h430M230 406h296" stroke="#1a1a1a" stroke-width="8" stroke-linecap="round" opacity=".72" />
+  <rect x="824" y="176" width="108" height="360" rx="18" fill="#111111" />
+  <rect x="858" y="204" width="40" height="292" rx="16" fill="#ffffff" opacity=".9" />
+  <circle cx="964" cy="506" r="48" fill="#e9e5dc" stroke="#d8d3ca" stroke-width="3" />
+  <path d="M156 610h888" stroke="#d8d3ca" stroke-width="4" stroke-linecap="round" />
+</svg>

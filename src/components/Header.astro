@@ -1,0 +1,35 @@
+---
+import { SITE_TITLE } from '../consts';
+
+const links = [
+  { href: '/', label: 'Home' },
+  { href: '/archive/', label: 'Archive' },
+  { href: '/about/', label: 'About' },
+  { href: '/rss.xml', label: 'RSS' },
+];
+
+const pathname = Astro.url.pathname;
+
+function isActive(href: string) {
+  if (href === '/rss.xml') return false;
+  if (href === '/') return pathname === '/';
+  return pathname.startsWith(href);
+}
+---
+
+<header class="site-header">
+  <a class="site-title" href="/">{SITE_TITLE}</a>
+  <nav class="site-nav" aria-label="Primary navigation">
+    {
+      links.map((link) => (
+        <a
+          class:list={{ active: isActive(link.href) }}
+          href={link.href}
+          aria-current={isActive(link.href) ? 'page' : undefined}
+        >
+          {link.label}
+        </a>
+      ))
+    }
+  </nav>
+</header>
