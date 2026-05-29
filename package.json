@@ -9,6 +9,8 @@
     "build": "astro check && astro build",
     "check": "astro check",
     "preview": "astro preview",
+    "admin": "node scripts/admin.mjs",
+    "admin:install": "node scripts/install-admin.mjs",
     "note:today": "node scripts/note.mjs today",
     "note:new": "node scripts/note.mjs new",
     "note:list": "node scripts/note.mjs list",
