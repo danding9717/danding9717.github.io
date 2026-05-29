@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
 import net from 'node:net';
+import os from 'node:os';
 import readline from 'node:readline';
 import {
   BlogError,
@@ -13,17 +14,54 @@ import {
   publishDraft,
 } from './blog-core.mjs';
 
-const menuItems = ['今日草稿', '文章列表', '本地预览', '发布草稿', '退出'];
-const maxLogLines = 12;
-let selectedIndex = 0;
-let publishIndex = 0;
-let mode = 'menu';
+const brandName = "Dan's Notes";
+const maxLogLines = 8;
+const commands = [
+  { name: '/today', label: 'Today draft', help: 'Open or create today draft' },
+  { name: '/new', label: 'New draft', help: 'Create draft for a date, e.g. /new 20260530' },
+  { name: '/list', label: 'Posts', help: 'Show drafts and published posts' },
+  { name: '/preview', label: 'Preview', help: 'Start or open local preview' },
+  { name: '/publish', label: 'Publish', help: 'Publish a draft, optional date allowed' },
+  { name: '/refresh', label: 'Refresh', help: 'Refresh post and draft status' },
+  { name: '/help', label: 'Help', help: 'Show command help' },
+  { name: '/quit', label: 'Quit', help: 'Exit blog admin' },
+];
+const commandNames = new Set(commands.map((command) => command.name));
+const homeActions = [
+  ['Today draft', '/today'],
+  ['Posts', '/list'],
+  ['Preview', '/preview'],
+  ['Publish', '/publish'],
+  ['Quit', '/quit'],
+];
+const dLogo = [
+  'DDDDDD ',
+  'D     D',
+  'D      D',
+  'D      D',
+  'D     D',
+  'DDDDDD ',
+];
+const ansi = {
+  bg: '\x1b[48;5;255m',
+  border: '\x1b[38;5;250m',
+  dark: '\x1b[38;5;236m',
+  faint: '\x1b[38;5;252m',
+  muted: '\x1b[38;5;246m',
+  reset: '\x1b[0m',
+  strong: '\x1b[1m',
+};
+
 let rows = [];
-let logs = ['Blog Admin 已启动。'];
+let logs = [];
+let input = '';
+let view = 'home';
+let selectedCommandIndex = 0;
+let publishIndex = 0;
 let busy = false;
 let previewProcess = null;
 let previewStartedHere = false;
-let statusLine = `项目：${projectRoot}`;
+let cursorTarget = { column: 1, row: 1 };
 
 if (process.argv.includes('--check')) {
   rows = await listNotes();
@@ -36,7 +74,7 @@ setupTerminal();
 render();
 
 readline.emitKeypressEvents(process.stdin);
-process.stdin.on('keypress', async (_input, key = {}) => {
+process.stdin.on('keypress', async (value, key = {}) => {
   if (key.ctrl && key.name === 'c') {
     await exitAdmin();
     return;
@@ -44,45 +82,105 @@ process.stdin.on('keypress', async (_input, key = {}) => {
 
   if (busy) return;
 
-  if (key.name === 'q') {
-    await exitAdmin();
-    return;
-  }
+  await handleKey(value, key);
+});
+process.stdout.on('resize', render);
 
-  if (key.name === 'r') {
-    await refreshRows();
-    log('已刷新。');
+async function handleKey(value, key) {
+  if (key.name === 'escape') {
+    input = '';
+    selectedCommandIndex = 0;
+    view = 'home';
     render();
     return;
   }
 
-  if (mode === 'publish') {
-    await handlePublishKeys(key);
+  if (input.startsWith('/')) {
+    await handleCommandInput(value, key);
     return;
   }
 
-  if (key.name === 'up' || key.name === 'k') {
-    selectedIndex = Math.max(0, selectedIndex - 1);
+  if (value === '/') {
+    input = '/';
+    selectedCommandIndex = 0;
     render();
     return;
   }
 
-  if (key.name === 'down' || key.name === 'j') {
-    selectedIndex = Math.min(menuItems.length - 1, selectedIndex + 1);
+  if (view === 'publish') {
+    await handlePublishKeys(value, key);
+    return;
+  }
+
+  if (key.name === 'backspace') {
+    input = input.slice(0, -1);
     render();
     return;
   }
 
   if (key.name === 'return') {
-    await runMenuAction(selectedIndex);
+    if (input.trim()) {
+      log('Commands start with /. Try /help.');
+      input = '';
+    }
+    render();
+    return;
   }
-});
 
-async function handlePublishKeys(key) {
-  const draftRows = rows.filter((row) => row.status === 'draft');
+  if (isPrintable(value)) {
+    input += value;
+    render();
+  }
+}
 
-  if (key.name === 'escape') {
-    mode = 'menu';
+async function handleCommandInput(value, key) {
+  if (key.name === 'backspace') {
+    input = input.slice(0, -1);
+    if (!input.startsWith('/')) input = '';
+    selectedCommandIndex = 0;
+    render();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'u') {
+    input = '/';
+    selectedCommandIndex = 0;
+    render();
+    return;
+  }
+
+  const suggestions = getCommandSuggestions();
+
+  if (key.name === 'up' || key.name === 'k') {
+    selectedCommandIndex = Math.max(0, selectedCommandIndex - 1);
+    render();
+    return;
+  }
+
+  if (key.name === 'down' || key.name === 'j') {
+    selectedCommandIndex = Math.min(Math.max(0, suggestions.length - 1), selectedCommandIndex + 1);
+    render();
+    return;
+  }
+
+  if (key.name === 'return') {
+    await submitCommand();
+    return;
+  }
+
+  if (isPrintable(value)) {
+    input += value;
+    selectedCommandIndex = 0;
+    render();
+  }
+}
+
+async function handlePublishKeys(value, key) {
+  const draftRows = getDraftRows();
+
+  if (value === '/') {
+    input = '/';
+    selectedCommandIndex = 0;
     render();
     return;
   }
@@ -94,7 +192,7 @@ async function handlePublishKeys(key) {
   }
 
   if (key.name === 'down' || key.name === 'j') {
-    publishIndex = Math.min(draftRows.length - 1, publishIndex + 1);
+    publishIndex = Math.min(Math.max(0, draftRows.length - 1), publishIndex + 1);
     render();
     return;
   }
@@ -104,80 +202,147 @@ async function handlePublishKeys(key) {
   }
 }
 
-async function runMenuAction(index) {
-  const label = menuItems[index];
+async function submitCommand() {
+  const trimmed = input.trim();
+  const suggestions = getCommandSuggestions();
+  const firstWord = trimmed.split(/\s+/)[0];
+  let commandLine = trimmed;
 
-  if (label === '今日草稿') {
-    await runTask(async () => {
-      const result = await createDraft(compactDateForToday(), {
-        editor: 'Typora',
-        open: true,
+  if (trimmed === '/' || !commandNames.has(firstWord)) {
+    commandLine = suggestions[selectedCommandIndex]?.name ?? trimmed;
+  }
+
+  input = '';
+  selectedCommandIndex = 0;
+  await executeCommand(commandLine);
+}
+
+async function executeCommand(commandLine) {
+  const [name = '', ...args] = commandLine.trim().split(/\s+/);
+
+  switch (name.toLowerCase()) {
+    case '/today':
+      await runTask(async () => {
+        const result = await createDraft(compactDateForToday(), {
+          editor: 'Typora',
+          open: true,
+        });
+        logMany(result.messages);
+        await refreshRows();
+        view = 'home';
       });
-      logMany(result.messages);
+      return;
+
+    case '/new':
+      await runTask(async () => {
+        const result = await createDraft(args[0], {
+          editor: 'Typora',
+          open: true,
+        });
+        logMany(result.messages);
+        await refreshRows();
+        view = 'home';
+      });
+      return;
+
+    case '/list':
       await refreshRows();
-    });
-    return;
-  }
-
-  if (label === '文章列表') {
-    await refreshRows();
-    mode = 'list';
-    log('文章列表已更新。');
-    render();
-    return;
-  }
-
-  if (label === '本地预览') {
-    await runTask(startPreview);
-    return;
-  }
-
-  if (label === '发布草稿') {
-    await refreshRows();
-    const draftRows = rows.filter((row) => row.status === 'draft');
-
-    if (!draftRows.length) {
-      log('没有可发布的草稿。');
+      view = 'list';
+      log('Posts refreshed.');
       render();
       return;
-    }
 
-    if (draftRows.length === 1) {
-      await publishSelectedDraft(draftRows[0]);
+    case '/preview':
+      await runTask(startPreview);
       return;
-    }
 
-    mode = 'publish';
-    publishIndex = 0;
-    log('选择一篇草稿发布，Esc 返回。');
+    case '/publish':
+      if (args[0]) {
+        await publishByDate(args[0]);
+      } else {
+        await openPublishFlow();
+      }
+      return;
+
+    case '/refresh':
+      await refreshRows();
+      log('Refreshed.');
+      render();
+      return;
+
+    case '/help':
+      view = 'help';
+      log('Help opened.');
+      render();
+      return;
+
+    case '/quit':
+      await exitAdmin();
+      return;
+
+    default:
+      log(`Unknown command: ${commandLine || '/'}`);
+      render();
+  }
+}
+
+async function openPublishFlow() {
+  await refreshRows();
+  const draftRows = getDraftRows();
+
+  if (!draftRows.length) {
+    log('No drafts to publish.');
+    view = 'home';
     render();
     return;
   }
 
-  await exitAdmin();
+  if (draftRows.length === 1) {
+    await publishSelectedDraft(draftRows[0]);
+    return;
+  }
+
+  publishIndex = 0;
+  view = 'publish';
+  log('Choose a draft, then press Enter.');
+  render();
+}
+
+async function publishByDate(date) {
+  await runTask(async () => {
+    log(`Publishing ${date}...`);
+    const result = await publishDraft(date, { stdio: 'pipe' });
+    logMany(result.messages);
+    if (result.buildOutput) {
+      log(buildSummary(result.buildOutput));
+    }
+    await refreshRows();
+    view = 'list';
+  });
 }
 
 async function publishSelectedDraft(row) {
   await runTask(async () => {
-    log(`开始发布：${row.title}`);
+    log(`Publishing ${row.title}...`);
     const result = await publishDraft(row.compact, { stdio: 'pipe' });
     logMany(result.messages);
     if (result.buildOutput) {
       log(buildSummary(result.buildOutput));
     }
     await refreshRows();
-    mode = 'list';
+    view = 'list';
   });
 }
 
 async function startPreview() {
   if (await isPreviewReachable()) {
-    log(`预览已在运行：${previewUrl}`);
+    log(`Preview is already running: ${previewUrl}`);
     openUrl(previewUrl);
+    view = 'home';
     return;
   }
 
-  log('正在启动本地预览服务...');
+  log('Starting local preview...');
   previewProcess = spawn(
     'npm',
     ['run', 'dev', '--', '--host', '127.0.0.1', '--port', '4321'],
@@ -204,7 +369,7 @@ async function startPreview() {
 
   previewProcess.on('exit', (code) => {
     if (code !== null && code !== 0) {
-      log(`预览服务已退出：${code}`);
+      log(`Preview exited: ${code}`);
     }
     previewProcess = null;
     render();
@@ -212,14 +377,15 @@ async function startPreview() {
 
   for (let attempt = 0; attempt < 30; attempt += 1) {
     if (await isPreviewReachable()) {
-      log(`预览已启动：${previewUrl}`);
+      log(`Preview ready: ${previewUrl}`);
       openUrl(previewUrl);
+      view = 'home';
       return;
     }
     await sleep(500);
   }
 
-  throw new BlogError('预览服务启动超时，请查看日志。');
+  throw new BlogError('Preview timed out. Check the log.');
 }
 
 function openUrl(url) {
@@ -245,7 +411,6 @@ async function isPreviewReachable() {
 
 async function refreshRows() {
   rows = await listNotes();
-  statusLine = `项目：${projectRoot}  文章：${rows.filter((row) => row.status === 'post').length}  草稿：${rows.filter((row) => row.status === 'draft').length}`;
 }
 
 async function runTask(task) {
@@ -275,74 +440,238 @@ function setupTerminal() {
 
   process.stdin.setRawMode(true);
   process.stdin.resume();
-  process.stdout.write('\x1b[?25l');
+  process.stdout.write('\x1b[?25h');
 }
 
 function render() {
   const width = process.stdout.columns || 100;
-  const height = process.stdout.rows || 32;
-  const leftWidth = Math.min(28, Math.max(22, Math.floor(width * 0.28)));
-  const rightWidth = Math.max(40, width - leftWidth - 5);
-  const left = renderMenu(leftWidth);
-  const right = renderPanel(rightWidth, height - 5);
-  const lines = [];
+  const height = Math.max(18, process.stdout.rows || 32);
+  const lines = Array.from({ length: height }, () => ''.padEnd(width, ' '));
+  const styles = Array.from({ length: height }, () => 'normal');
 
-  lines.push('Blog Admin'.padEnd(width, ' '));
-  lines.push(statusLine.slice(0, width));
-  lines.push('─'.repeat(width));
+  put(lines, styles, 1, 2, displayProjectPath(), 'muted');
 
-  const maxRows = Math.max(left.length, right.length, height - 5);
-  for (let index = 0; index < maxRows; index += 1) {
-    lines.push(
-      `${(left[index] ?? '').padEnd(leftWidth, ' ')} │ ${(right[index] ?? '').slice(
-        0,
-        rightWidth,
-      )}`,
-    );
+  if (input.startsWith('/')) {
+    renderCommandPalette(lines, styles, width, height);
+  } else if (view === 'publish') {
+    renderPublish(lines, styles, width, height);
+  } else if (view === 'list') {
+    renderList(lines, styles, width, height);
+  } else if (view === 'help') {
+    renderHelp(lines, styles, width, height);
+  } else {
+    renderHome(lines, styles, width, height);
   }
 
-  lines.push('─'.repeat(width));
-  lines.push(
-    `${busy ? '处理中...' : 'Enter 执行  ↑/↓ 或 j/k 移动  r 刷新  q 退出'}`.slice(0, width),
+  renderFooter(lines, styles, width, height);
+
+  const body = lines
+    .map((line, index) => paint(line.slice(0, width).padEnd(width, ' '), styles[index]))
+    .join('\n');
+
+  process.stdout.write(`\x1b[2J\x1b[H${body}\x1b[${cursorTarget.row};${cursorTarget.column}H`);
+}
+
+function renderHome(lines, styles, width, height) {
+  const logoStart = clamp(Math.floor(height * 0.25), 3, Math.max(3, height - 16));
+  centerBlock(lines, styles, dLogo, logoStart, width, 'faint');
+
+  const actionRows = homeActions.map(
+    ([label, command]) => `${label.padEnd(16, ' ')} ${command}`,
+  );
+  const actionsStart = Math.min(height - 10, logoStart + dLogo.length + 3);
+  centerBlock(lines, styles, actionRows, actionsStart, width, 'strong');
+
+  const lastLines = logs.slice(-3);
+  const logStart = actionsStart + actionRows.length + 2;
+  const availableLogRows = Math.max(0, height - 4 - logStart);
+  if (availableLogRows > 0) {
+    centerBlock(lines, styles, lastLines.slice(-availableLogRows), logStart, width, 'muted');
+  }
+}
+
+function renderCommandPalette(lines, styles, width, height) {
+  const suggestions = getCommandSuggestions();
+  selectedCommandIndex = clamp(
+    selectedCommandIndex,
+    0,
+    Math.max(0, suggestions.length - 1),
   );
 
-  process.stdout.write(`\x1b[2J\x1b[H${lines.slice(0, height).join('\n')}`);
-}
-
-function renderMenu(width) {
-  const lines = [];
-
-  for (const [index, label] of menuItems.entries()) {
-    const prefix = mode !== 'publish' && index === selectedIndex ? '› ' : '  ';
-    lines.push(`${prefix}${label}`.slice(0, width));
-  }
-
-  return lines;
-}
-
-function renderPanel(width, availableRows) {
-  if (mode === 'publish') {
-    const draftRows = rows.filter((row) => row.status === 'draft');
-    const lines = ['选择要发布的草稿：', ''];
-
-    for (const [index, row] of draftRows.entries()) {
-      const prefix = index === publishIndex ? '› ' : '  ';
-      lines.push(`${prefix}${row.title}  ${row.path}`);
+  const panelRows = ['Commands', ''];
+  if (suggestions.length) {
+    for (const [index, command] of suggestions.entries()) {
+      const prefix = index === selectedCommandIndex ? '> ' : '  ';
+      panelRows.push(`${prefix}${command.name.padEnd(12, ' ')} ${command.help}`);
     }
+  } else {
+    panelRows.push('No matching command.');
+  }
+  panelRows.push('', 'Enter run  Esc home  Up/Down select');
 
-    lines.push('', 'Esc 返回，Enter 发布。');
-    return lines.slice(0, availableRows);
+  const start = clamp(Math.floor(height * 0.32), 3, Math.max(3, height - panelRows.length - 6));
+  centerBlock(lines, styles, panelRows, start, width, 'normal', selectedCommandIndex + 2);
+}
+
+function renderPublish(lines, styles, width, height) {
+  const draftRows = getDraftRows();
+  const panelRows = ['Choose draft to publish', ''];
+
+  if (draftRows.length) {
+    for (const [index, row] of draftRows.entries()) {
+      const prefix = index === publishIndex ? '> ' : '  ';
+      panelRows.push(`${prefix}${row.compact}  ${row.path}`);
+    }
+  } else {
+    panelRows.push('No drafts to publish.');
   }
 
-  if (mode === 'list') {
-    return wrapLines(formatNoteRows(rows), width).slice(0, availableRows);
-  }
+  panelRows.push('', 'Enter publish  / command  Esc home');
+  const start = clamp(Math.floor(height * 0.28), 3, Math.max(3, height - panelRows.length - 6));
+  centerBlock(lines, styles, panelRows, start, width, 'normal', publishIndex + 2);
+}
 
-  const lines = ['日志', ''];
-  for (const line of logs.slice(-maxLogLines)) {
-    lines.push(...wrapLine(line, width));
+function renderList(lines, styles, width, height) {
+  const contentWidth = Math.min(96, Math.max(28, width - 8));
+  const content = ['Posts', '', ...wrapLines(formatNoteRows(rows), contentWidth)];
+  const start = 4;
+  const col = Math.max(2, Math.floor((width - contentWidth) / 2));
+
+  for (let index = 0; index < Math.min(content.length, height - 9); index += 1) {
+    put(lines, styles, start + index, col, content[index], index === 0 ? 'strong' : 'normal');
   }
-  return lines.slice(0, availableRows);
+}
+
+function renderHelp(lines, styles, width, height) {
+  const content = [
+    'Commands',
+    '',
+    ...commands.map((command) => `${command.name.padEnd(12, ' ')} ${command.help}`),
+    '',
+    'Press / to type a command. Esc returns home.',
+  ];
+  const contentWidth = Math.min(86, Math.max(28, width - 8));
+  const start = 4;
+  const col = Math.max(2, Math.floor((width - contentWidth) / 2));
+
+  for (let index = 0; index < Math.min(content.length, height - 9); index += 1) {
+    put(lines, styles, start + index, col, content[index], index === 0 ? 'strong' : 'normal');
+  }
+}
+
+function renderFooter(lines, styles, width, height) {
+  const margin = width > 54 ? 2 : 0;
+  const boxWidth = Math.max(4, width - margin * 2);
+  const topRow = Math.max(1, height - 2);
+  const inputRow = Math.max(1, height - 1);
+  const bottomRow = Math.max(1, height);
+  const tipRow = Math.max(1, height - 3);
+  const latestLog = logs.at(-1);
+  const tip = busy
+    ? 'Working...'
+    : input.startsWith('/')
+      ? 'Enter run · Esc home · Up/Down select'
+      : latestLog
+        ? `${latestLog}  ·  Press / for commands.`
+        : 'Tip: Press / to open commands.';
+  const meta = ` ${brandName} · blog-admin `;
+  const maxInput = Math.max(1, boxWidth - 6);
+  const displayInput = input.length > maxInput ? `...${input.slice(-(maxInput - 3))}` : input;
+  const inputText = `› ${displayInput}`;
+
+  put(lines, styles, tipRow, margin + 1, tip, 'muted');
+  put(
+    lines,
+    styles,
+    topRow,
+    margin,
+    `┌${'─'.repeat(Math.max(0, boxWidth - 2))}┐`,
+    'border',
+  );
+  put(
+    lines,
+    styles,
+    inputRow,
+    margin,
+    `│ ${inputText.padEnd(boxWidth - 4, ' ')} │`,
+    'normal',
+  );
+
+  let bottom = `└${'─'.repeat(Math.max(0, boxWidth - 2))}┘`;
+  if (meta.length < boxWidth - 4) {
+    const insertAt = Math.max(1, boxWidth - meta.length - 2);
+    bottom = `${bottom.slice(0, insertAt)}${meta}${bottom.slice(insertAt + meta.length)}`;
+  }
+  put(lines, styles, bottomRow, margin, bottom, 'muted');
+
+  cursorTarget = {
+    column: Math.min(width, margin + 4 + displayInput.length),
+    row: clamp(inputRow, 1, height),
+  };
+}
+
+function getCommandSuggestions() {
+  const query = input.slice(1).trim().toLowerCase();
+  if (!query) return commands;
+
+  const commandQuery = query.split(/\s+/)[0];
+  const nameMatches = commands.filter((command) =>
+    command.name.slice(1).startsWith(commandQuery),
+  );
+  if (nameMatches.length) return nameMatches;
+
+  return commands.filter((command) => {
+    const name = command.name.slice(1);
+    return (
+      name.startsWith(commandQuery) ||
+      command.label.toLowerCase().includes(query) ||
+      command.help.toLowerCase().includes(query)
+    );
+  });
+}
+
+function getDraftRows() {
+  return rows.filter((row) => row.status === 'draft');
+}
+
+function displayProjectPath() {
+  const home = os.homedir();
+  return projectRoot.startsWith(home) ? projectRoot.replace(home, '~') : projectRoot;
+}
+
+function centerBlock(lines, styles, block, startRow, width, styleName, selectedRelativeIndex = -1) {
+  const blockWidth = Math.max(...block.map((line) => line.length), 0);
+  const col = Math.max(0, Math.floor((width - blockWidth) / 2));
+
+  for (const [index, line] of block.entries()) {
+    const row = startRow + index;
+    const rowStyle = index === selectedRelativeIndex ? 'selected' : styleName;
+    put(lines, styles, row, col, line, rowStyle);
+  }
+}
+
+function put(lines, styles, rowNumber, columnNumber, text, styleName = 'normal') {
+  const row = rowNumber - 1;
+  const column = columnNumber - 1;
+  if (row < 0 || row >= lines.length || column < 0 || column >= lines[row].length) return;
+
+  const available = lines[row].length - column;
+  const clipped = String(text).slice(0, available);
+  lines[row] =
+    lines[row].slice(0, column) + clipped + lines[row].slice(column + clipped.length);
+  styles[row] = styleName;
+}
+
+function paint(line, styleName) {
+  const palette = {
+    border: `${ansi.bg}${ansi.border}`,
+    faint: `${ansi.bg}${ansi.faint}`,
+    muted: `${ansi.bg}${ansi.muted}`,
+    normal: `${ansi.bg}${ansi.dark}`,
+    selected: `${ansi.bg}${ansi.strong}${ansi.dark}`,
+    strong: `${ansi.bg}${ansi.strong}${ansi.dark}`,
+  };
+  return `${palette[styleName] ?? palette.normal}${line}${ansi.reset}`;
 }
 
 function wrapLines(text, width) {
@@ -384,7 +713,15 @@ function buildSummary(output) {
 }
 
 function stripAnsi(value) {
-  return value.replace(/\x1b\[[0-9;]*m/g, '');
+  return value.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+}
+
+function isPrintable(value) {
+  return typeof value === 'string' && value.length > 0 && !/[\x00-\x1f\x7f]/.test(value);
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function sleep(ms) {
@@ -397,7 +734,7 @@ async function exitAdmin() {
     previewProcess = null;
   }
 
-  process.stdout.write('\x1b[?25h\x1b[2J\x1b[H');
+  process.stdout.write(`${ansi.reset}\x1b[2J\x1b[H`);
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(false);
   }
