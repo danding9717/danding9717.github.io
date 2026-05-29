@@ -35,8 +35,8 @@ draft: false
 ```
 
 - `draft: true` 的文章不会出现在首页、归档页和 RSS 中。
-- 文件名会成为文章地址，例如 `2026-05-29-first-note.md` 会生成 `/danding.github.io/posts/2026-05-29-first-note/`。
-- 图片可以放在 `public/images/`，在文章里用 `/danding.github.io/images/文件名` 引用。
+- 文件名会成为文章地址，例如 `2026-05-29-first-note.md` 会生成 `/posts/2026-05-29-first-note/`。
+- 图片可以放在 `public/images/`，在文章里用 `/images/文件名` 引用。
 
 ## 修改博客信息
 
@@ -49,12 +49,12 @@ draft: false
 这个项目按 GitHub Pages 用户主页配置，适合仓库名为：
 
 ```text
-你的 GitHub 用户名.github.io
+danding9717.github.io
 ```
 
 部署前请做两件事：
 
-1. 在 `astro.config.mjs` 中确认 `site` 是 `https://danding9717.github.io`，`base` 是 `/danding.github.io`。
+1. 在 `astro.config.mjs` 中确认 `site` 是 `https://danding9717.github.io`。
 2. 在 GitHub 仓库的 Settings -> Pages 中，把 Source 设置为 GitHub Actions。
 
 之后把代码推送到 `main` 分支，`.github/workflows/deploy.yml` 会自动构建并发布。
@@ -62,7 +62,7 @@ draft: false
 当前仓库对应的访问地址是：
 
 ```text
-https://danding9717.github.io/danding.github.io/
+https://danding9717.github.io/
 ```
 
 如果以后想部署到项目站点，例如 `https://yourname.github.io/personal-blog/`，需要在 `astro.config.mjs` 中额外设置：
