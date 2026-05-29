@@ -1,5 +1,6 @@
 ---
 import { SITE_TITLE } from '../consts';
+import { stripBase, withBase } from '../utils/paths';
 
 const links = [
   { href: '/', label: 'Home' },
@@ -8,7 +9,7 @@ const links = [
   { href: '/rss.xml', label: 'RSS' },
 ];
 
-const pathname = Astro.url.pathname;
+const pathname = stripBase(Astro.url.pathname);
 
 function isActive(href: string) {
   if (href === '/rss.xml') return false;
@@ -18,13 +19,13 @@ function isActive(href: string) {
 ---
 
 <header class="site-header">
-  <a class="site-title" href="/">{SITE_TITLE}</a>
+  <a class="site-title" href={withBase('/')}>{SITE_TITLE}</a>
   <nav class="site-nav" aria-label="Primary navigation">
     {
       links.map((link) => (
         <a
           class:list={{ active: isActive(link.href) }}
-          href={link.href}
+          href={withBase(link.href)}
           aria-current={isActive(link.href) ? 'page' : undefined}
         >
           {link.label}

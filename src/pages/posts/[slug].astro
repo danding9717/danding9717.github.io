@@ -2,6 +2,7 @@
 import { getCollection, render } from 'astro:content';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { formatDate, isPublished, sortPosts } from '../../utils/posts';
+import { withBase } from '../../utils/paths';
 
 export async function getStaticPaths() {
   const posts = sortPosts((await getCollection('posts')).filter(isPublished));
@@ -42,8 +43,8 @@ const { Content } = await render(post);
     </div>
 
     <footer class="post-backlinks">
-      <a href="/">返回首页</a>
-      <a href="/archive/">返回 Archive</a>
+      <a href={withBase('/')}>返回首页</a>
+      <a href={withBase('/archive/')}>返回 Archive</a>
     </footer>
   </article>
 </BaseLayout>

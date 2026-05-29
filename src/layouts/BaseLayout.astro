@@ -1,6 +1,7 @@
 ---
 import Header from '../components/Header.astro';
 import { AUTHOR_NAME, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { withBase } from '../utils/paths';
 import '../styles/global.css';
 
 interface Props {
@@ -19,12 +20,12 @@ const pageTitle = title === SITE_TITLE ? SITE_TITLE : `${title} | ${SITE_TITLE}`
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <meta name="generator" content={Astro.generator} />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href={withBase('/favicon.svg')} type="image/svg+xml" />
     <link
       rel="alternate"
       type="application/rss+xml"
       title={SITE_TITLE}
-      href="/rss.xml"
+      href={withBase('/rss.xml')}
     />
     <title>{pageTitle}</title>
   </head>

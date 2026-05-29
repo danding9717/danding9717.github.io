@@ -1,4 +1,5 @@
 import type { CollectionEntry } from 'astro:content';
+import { withBase } from './paths';
 
 export type Post = CollectionEntry<'posts'>;
 
@@ -23,7 +24,7 @@ export function formatDate(date: Date) {
 }
 
 export function getPostUrl(post: Post) {
-  return `/posts/${post.id}/`;
+  return withBase(`/posts/${post.id}/`);
 }
 
 export function getExcerpt(post: Post, maxLength = 320) {

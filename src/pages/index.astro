@@ -4,6 +4,7 @@ import PostPreview from '../components/PostPreview.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
 import { isPublished, sortPosts } from '../utils/posts';
+import { withBase } from '../utils/paths';
 
 const posts = sortPosts((await getCollection('posts')).filter(isPublished));
 ---
@@ -13,6 +14,6 @@ const posts = sortPosts((await getCollection('posts')).filter(isPublished));
     {posts.map((post) => <PostPreview post={post} />)}
   </section>
   <p class="archive-entry">
-    <a href="/archive/">ARCHIVE &rarr;</a>
+    <a href={withBase('/archive/')}>ARCHIVE &rarr;</a>
   </p>
 </BaseLayout>

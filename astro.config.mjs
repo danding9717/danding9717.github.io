@@ -2,7 +2,8 @@ import { defineConfig } from 'astro/config';
 import mdx from '@astrojs/mdx';
 
 export default defineConfig({
-  site: 'https://danding.github.io',
+  site: 'https://danding9717.github.io',
+  base: '/danding.github.io',
   output: 'static',
   integrations: [mdx()],
   markdown: {
