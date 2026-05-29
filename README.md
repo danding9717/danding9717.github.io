@@ -43,6 +43,11 @@ blog-admin
 - `/preview`：启动网站预览，并打开 `http://127.0.0.1:4321/`。
 - `/publish`：选择草稿发布，自动整理 frontmatter、图片并运行构建检查。
 - `/publish 20260529`：直接发布指定日期草稿。
+- `/commit`：运行构建检查，提交当前改动并推送到 GitHub。
+- `/commit Add note 20260529`：使用自定义提交信息提交并推送。
+- `/delete`：选择草稿或文章，移动到本地回收站。
+- `/delete 20260529`：直接把指定草稿或文章移入本地回收站。
+- `/trash`：查看本地回收站内容。
 - `/help`：查看命令帮助。
 - `/quit`：关闭后台。如果预览服务由后台启动，也会一起关闭。
 
@@ -92,7 +97,13 @@ npm run note:publish -- 20260529
 - 把文章移动到 `src/content/posts/`。
 - 运行 `npm run build` 检查网站是否可构建。
 
-上线：
+上线可以直接在后台执行：
+
+```bash
+/commit
+```
+
+也可以继续手动执行：
 
 ```bash
 git add .
@@ -101,6 +112,8 @@ git push
 ```
 
 草稿目录默认被 Git 忽略，避免未完成内容被推到公开仓库。
+
+删除草稿或文章时，后台不会真正抹掉文件，而是移动到 `.blog-trash/`。这个目录只保存在本地，并已加入 `.gitignore`，不会公开到 GitHub。
 
 ### Obsidian / Typora 设置
 

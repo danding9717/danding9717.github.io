@@ -5,6 +5,7 @@ import {
   mkdir,
   readdir,
   readFile,
+  rename,
   rm,
   stat,
   unlink,
@@ -17,6 +18,7 @@ export const projectRoot = path.resolve(fileURLToPath(new URL('..', import.meta.
 export const draftsDir = path.join(projectRoot, 'src/content/drafts');
 export const postsDir = path.join(projectRoot, 'src/content/posts');
 export const publicImagesDir = path.join(projectRoot, 'public/images');
+export const trashDir = path.join(projectRoot, '.blog-trash');
 export const previewUrl = 'http://127.0.0.1:4321/';
 
 const blogTimezone = process.env.BLOG_TIMEZONE || 'Asia/Shanghai';
@@ -281,6 +283,7 @@ export async function publishDraft(compactDate, options = {}) {
 
   return {
     buildOutput,
+    compactDate: normalizedDate,
     destinationPath,
     messages: [
       `已生成发布文章：${relative(destinationPath)}`,
@@ -290,6 +293,181 @@ export async function publishDraft(compactDate, options = {}) {
       'git push',
     ],
     sourcePath,
+  };
+}
+
+export async function moveNoteToTrash(target) {
+  await ensureBaseDirs();
+
+  const row = typeof target === 'string' ? await findNote(target) : target;
+  if (!row) {
+    throw new BlogError(`没有找到要删除的文章或草稿：${target}`);
+  }
+
+  if (!['draft', 'post'].includes(row.status)) {
+    throw new BlogError(`不支持删除该状态：${row.status}`);
+  }
+
+  const sessionDir = await createTrashSessionDir();
+  const moved = [await movePathToTrash(row.filePath, sessionDir)];
+
+  if (row.status === 'draft') {
+    const assetsPath = path.join(
+      draftsDir,
+      `${path.basename(row.filePath, path.extname(row.filePath))}.assets`,
+    );
+    if (existsSync(assetsPath)) {
+      moved.push(await movePathToTrash(assetsPath, sessionDir));
+    }
+  }
+
+  return {
+    messages: [
+      `已移入回收站：${relative(sessionDir)}`,
+      ...moved.map((item) => `- ${item}`),
+    ],
+    moved,
+    sessionDir,
+  };
+}
+
+export async function findNote(identifier) {
+  const key = normalizeIdentifier(identifier);
+  const rows = await listNotes();
+  const matches = rows.filter((row) => {
+    const basename = path.basename(row.filePath, path.extname(row.filePath));
+    return (
+      row.compact === key ||
+      basename === key ||
+      row.date === key ||
+      row.title === key ||
+      row.path === key ||
+      row.path.endsWith(`/${key}`) ||
+      row.path.endsWith(`/${key}.md`) ||
+      row.path.endsWith(`/${key}.mdx`)
+    );
+  });
+
+  if (matches.length > 1) {
+    throw new BlogError(
+      `匹配到多篇内容，请使用更完整的文件名：${matches.map((row) => row.compact).join(', ')}`,
+    );
+  }
+
+  return matches[0] ?? null;
+}
+
+export async function listTrashItems() {
+  if (!existsSync(trashDir)) return [];
+
+  const entries = await readdir(trashDir, { withFileTypes: true });
+  const sessions = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((a, b) => b.localeCompare(a));
+  const items = [];
+
+  for (const session of sessions) {
+    const sessionDir = path.join(trashDir, session);
+    const files = await listRelativeFiles(sessionDir);
+    items.push({
+      files,
+      path: relative(sessionDir),
+      session,
+    });
+  }
+
+  return items;
+}
+
+export function formatTrashItems(items) {
+  if (!items.length) {
+    return '回收站为空。';
+  }
+
+  return items
+    .flatMap((item) => [
+      item.session,
+      ...item.files.map((file) => `  ${file}`),
+    ])
+    .join('\n');
+}
+
+export function getGitStatus() {
+  const result = runCommand('git', ['status', '--porcelain'], {
+    allowFailure: true,
+  });
+  return result.stdout.trim();
+}
+
+export function commitAndPush(message, options = {}) {
+  const commitMessage = String(message || 'Update blog').trim() || 'Update blog';
+  const statusBefore = getGitStatus();
+
+  if (!statusBefore) {
+    return {
+      messages: ['没有需要提交的改动。'],
+      noChanges: true,
+    };
+  }
+
+  const buildResult = runCommand('npm', ['run', 'build'], {
+    allowFailure: true,
+    stdio: options.stdio,
+  });
+  if (buildResult.status !== 0) {
+    throw new BlogError('构建失败，已停止提交。', {
+      details: buildResult.output,
+      status: buildResult.status ?? 1,
+    });
+  }
+
+  const addResult = runCommand('git', ['add', '.'], {
+    allowFailure: true,
+  });
+  if (addResult.status !== 0) {
+    throw new BlogError('Git add 失败。', {
+      details: addResult.output,
+      status: addResult.status ?? 1,
+    });
+  }
+
+  const statusAfterAdd = getGitStatus();
+  if (!statusAfterAdd) {
+    return {
+      buildOutput: buildResult.output,
+      messages: ['没有需要提交的改动。'],
+      noChanges: true,
+    };
+  }
+
+  const commitResult = runCommand('git', ['commit', '-m', commitMessage], {
+    allowFailure: true,
+  });
+  if (commitResult.status !== 0) {
+    throw new BlogError('Git commit 失败。', {
+      details: commitResult.output,
+      status: commitResult.status ?? 1,
+    });
+  }
+
+  const pushResult = runCommand('git', ['push'], {
+    allowFailure: true,
+  });
+  if (pushResult.status !== 0) {
+    throw new BlogError('Git push 失败。本地提交已完成，请稍后手动 push。', {
+      details: pushResult.output,
+      status: pushResult.status ?? 1,
+    });
+  }
+
+  return {
+    buildOutput: buildResult.output,
+    messages: [
+      `已提交：${commitMessage}`,
+      '已推送到 GitHub。',
+    ],
+    statusBefore,
   };
 }
 
@@ -303,6 +481,91 @@ export function findExistingDraft(compactDate) {
 
 export function relative(filePath) {
   return path.relative(projectRoot, filePath);
+}
+
+async function createTrashSessionDir() {
+  await mkdir(trashDir, { recursive: true });
+
+  const baseName = formatLocalTimestamp(new Date());
+  let candidate = path.join(trashDir, baseName);
+  let suffix = 2;
+
+  while (existsSync(candidate)) {
+    candidate = path.join(trashDir, `${baseName}-${suffix}`);
+    suffix += 1;
+  }
+
+  await mkdir(candidate, { recursive: true });
+  return candidate;
+}
+
+async function movePathToTrash(sourcePath, sessionDir) {
+  const destinationPath = path.join(sessionDir, relative(sourcePath));
+  await mkdir(path.dirname(destinationPath), { recursive: true });
+  await rename(sourcePath, destinationPath);
+  return relative(destinationPath);
+}
+
+function normalizeIdentifier(identifier) {
+  return String(identifier ?? '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .replace(/\.(md|mdx)$/i, '');
+}
+
+function formatLocalTimestamp(date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: blogTimezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}${values.month}${values.day}-${values.hour}${values.minute}${values.second}`;
+}
+
+async function listRelativeFiles(directory, prefix = '') {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    const entryPath = path.join(directory, entry.name);
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      files.push(...(await listRelativeFiles(entryPath, relativePath)));
+    } else {
+      files.push(relativePath);
+    }
+  }
+
+  return files;
+}
+
+function runCommand(command, args, options = {}) {
+  const result = spawnSync(command, args, {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    stdio: options.stdio === 'inherit' ? 'inherit' : 'pipe',
+  });
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
+
+  if (!options.allowFailure && result.status !== 0) {
+    throw new BlogError(`${command} ${args.join(' ')} 执行失败。`, {
+      details: output,
+      status: result.status ?? 1,
+    });
+  }
+
+  return {
+    output,
+    status: result.status ?? 0,
+    stderr: result.stderr ?? '',
+    stdout: result.stdout ?? '',
+  };
 }
 
 async function processImages(content, context) {

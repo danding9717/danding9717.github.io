@@ -5,10 +5,14 @@ import os from 'node:os';
 import readline from 'node:readline';
 import {
   BlogError,
+  commitAndPush,
   compactDateForToday,
   createDraft,
+  formatTrashItems,
   formatNoteRows,
+  listTrashItems,
   listNotes,
+  moveNoteToTrash,
   previewUrl,
   projectRoot,
   publishDraft,
@@ -22,6 +26,9 @@ const commands = [
   { name: '/list', label: 'Posts', help: 'Show drafts and published posts' },
   { name: '/preview', label: 'Preview', help: 'Start or open local preview' },
   { name: '/publish', label: 'Publish', help: 'Publish a draft, optional date allowed' },
+  { name: '/commit', label: 'Commit', help: 'Build, commit, and push current changes' },
+  { name: '/delete', label: 'Delete', help: 'Move a draft or post into .blog-trash' },
+  { name: '/trash', label: 'Trash', help: 'Show archived deleted files' },
   { name: '/refresh', label: 'Refresh', help: 'Refresh post and draft status' },
   { name: '/help', label: 'Help', help: 'Show command help' },
   { name: '/quit', label: 'Quit', help: 'Exit blog admin' },
@@ -32,6 +39,8 @@ const homeActions = [
   ['Posts', '/list'],
   ['Preview', '/preview'],
   ['Publish', '/publish'],
+  ['Commit', '/commit'],
+  ['Delete', '/delete'],
   ['Quit', '/quit'],
 ];
 const dLogo = [
@@ -58,6 +67,9 @@ let input = '';
 let view = 'home';
 let selectedCommandIndex = 0;
 let publishIndex = 0;
+let deleteIndex = 0;
+let trashItems = [];
+let lastPublishedDate = '';
 let busy = false;
 let previewProcess = null;
 let previewStartedHere = false;
@@ -109,6 +121,11 @@ async function handleKey(value, key) {
 
   if (view === 'publish') {
     await handlePublishKeys(value, key);
+    return;
+  }
+
+  if (view === 'delete') {
+    await handleDeleteKeys(value, key);
     return;
   }
 
@@ -202,6 +219,33 @@ async function handlePublishKeys(value, key) {
   }
 }
 
+async function handleDeleteKeys(value, key) {
+  const deletableRows = getDeletableRows();
+
+  if (value === '/') {
+    input = '/';
+    selectedCommandIndex = 0;
+    render();
+    return;
+  }
+
+  if (key.name === 'up' || key.name === 'k') {
+    deleteIndex = Math.max(0, deleteIndex - 1);
+    render();
+    return;
+  }
+
+  if (key.name === 'down' || key.name === 'j') {
+    deleteIndex = Math.min(Math.max(0, deletableRows.length - 1), deleteIndex + 1);
+    render();
+    return;
+  }
+
+  if (key.name === 'return' && deletableRows[deleteIndex]) {
+    await deleteSelectedNote(deletableRows[deleteIndex]);
+  }
+}
+
 async function submitCommand() {
   const trimmed = input.trim();
   const suggestions = getCommandSuggestions();
@@ -264,6 +308,22 @@ async function executeCommand(commandLine) {
       }
       return;
 
+    case '/commit':
+      await commitChanges(args.join(' '));
+      return;
+
+    case '/delete':
+      if (args[0]) {
+        await deleteByIdentifier(args[0]);
+      } else {
+        await openDeleteFlow();
+      }
+      return;
+
+    case '/trash':
+      await openTrash();
+      return;
+
     case '/refresh':
       await refreshRows();
       log('Refreshed.');
@@ -312,6 +372,7 @@ async function publishByDate(date) {
   await runTask(async () => {
     log(`Publishing ${date}...`);
     const result = await publishDraft(date, { stdio: 'pipe' });
+    lastPublishedDate = result.compactDate || date;
     logMany(result.messages);
     if (result.buildOutput) {
       log(buildSummary(result.buildOutput));
@@ -325,6 +386,7 @@ async function publishSelectedDraft(row) {
   await runTask(async () => {
     log(`Publishing ${row.title}...`);
     const result = await publishDraft(row.compact, { stdio: 'pipe' });
+    lastPublishedDate = result.compactDate || row.compact;
     logMany(result.messages);
     if (result.buildOutput) {
       log(buildSummary(result.buildOutput));
@@ -332,6 +394,66 @@ async function publishSelectedDraft(row) {
     await refreshRows();
     view = 'list';
   });
+}
+
+async function commitChanges(message) {
+  await runTask(async () => {
+    const commitMessage = message.trim() || (lastPublishedDate ? `Add note ${lastPublishedDate}` : 'Update blog');
+    log(`Committing: ${commitMessage}`);
+    const result = commitAndPush(commitMessage, { stdio: 'pipe' });
+    logMany(result.messages);
+    if (result.buildOutput) {
+      log(buildSummary(result.buildOutput));
+    }
+    await refreshRows();
+    view = 'home';
+  });
+}
+
+async function openDeleteFlow() {
+  await refreshRows();
+  const deletableRows = getDeletableRows();
+
+  if (!deletableRows.length) {
+    log('No drafts or posts to delete.');
+    view = 'home';
+    render();
+    return;
+  }
+
+  deleteIndex = 0;
+  view = 'delete';
+  log('Choose a draft or post, then press Enter.');
+  render();
+}
+
+async function deleteByIdentifier(identifier) {
+  await runTask(async () => {
+    log(`Deleting ${identifier}...`);
+    const result = await moveNoteToTrash(identifier);
+    logMany(result.messages);
+    await refreshRows();
+    await refreshTrashItems();
+    view = 'trash';
+  });
+}
+
+async function deleteSelectedNote(row) {
+  await runTask(async () => {
+    log(`Deleting ${row.title}...`);
+    const result = await moveNoteToTrash(row);
+    logMany(result.messages);
+    await refreshRows();
+    await refreshTrashItems();
+    view = 'trash';
+  });
+}
+
+async function openTrash() {
+  await refreshTrashItems();
+  view = 'trash';
+  log('Trash refreshed.');
+  render();
 }
 
 async function startPreview() {
@@ -413,6 +535,10 @@ async function refreshRows() {
   rows = await listNotes();
 }
 
+async function refreshTrashItems() {
+  trashItems = await listTrashItems();
+}
+
 async function runTask(task) {
   busy = true;
   render();
@@ -455,8 +581,12 @@ function render() {
     renderCommandPalette(lines, styles, width, height);
   } else if (view === 'publish') {
     renderPublish(lines, styles, width, height);
+  } else if (view === 'delete') {
+    renderDelete(lines, styles, width, height);
   } else if (view === 'list') {
     renderList(lines, styles, width, height);
+  } else if (view === 'trash') {
+    renderTrash(lines, styles, width, height);
   } else if (view === 'help') {
     renderHelp(lines, styles, width, height);
   } else {
@@ -531,9 +661,38 @@ function renderPublish(lines, styles, width, height) {
   centerBlock(lines, styles, panelRows, start, width, 'normal', publishIndex + 2);
 }
 
+function renderDelete(lines, styles, width, height) {
+  const deletableRows = getDeletableRows();
+  const panelRows = ['Move to .blog-trash', ''];
+
+  if (deletableRows.length) {
+    for (const [index, row] of deletableRows.entries()) {
+      const prefix = index === deleteIndex ? '> ' : '  ';
+      panelRows.push(`${prefix}${row.status.padEnd(5, ' ')} ${row.compact}  ${row.path}`);
+    }
+  } else {
+    panelRows.push('No drafts or posts to delete.');
+  }
+
+  panelRows.push('', 'Enter delete  / command  Esc home');
+  const start = clamp(Math.floor(height * 0.24), 3, Math.max(3, height - panelRows.length - 6));
+  centerBlock(lines, styles, panelRows, start, width, 'normal', deleteIndex + 2);
+}
+
 function renderList(lines, styles, width, height) {
   const contentWidth = Math.min(96, Math.max(28, width - 8));
   const content = ['Posts', '', ...wrapLines(formatNoteRows(rows), contentWidth)];
+  const start = 4;
+  const col = Math.max(2, Math.floor((width - contentWidth) / 2));
+
+  for (let index = 0; index < Math.min(content.length, height - 9); index += 1) {
+    put(lines, styles, start + index, col, content[index], index === 0 ? 'strong' : 'normal');
+  }
+}
+
+function renderTrash(lines, styles, width, height) {
+  const contentWidth = Math.min(96, Math.max(28, width - 8));
+  const content = ['Trash', '', ...wrapLines(formatTrashItems(trashItems), contentWidth)];
   const start = 4;
   const col = Math.max(2, Math.floor((width - contentWidth) / 2));
 
@@ -634,6 +793,10 @@ function getDraftRows() {
   return rows.filter((row) => row.status === 'draft');
 }
 
+function getDeletableRows() {
+  return rows.filter((row) => ['draft', 'post'].includes(row.status));
+}
+
 function displayProjectPath() {
   const home = os.homedir();
   return projectRoot.startsWith(home) ? projectRoot.replace(home, '~') : projectRoot;
@@ -641,7 +804,7 @@ function displayProjectPath() {
 
 function centerBlock(lines, styles, block, startRow, width, styleName, selectedRelativeIndex = -1) {
   const blockWidth = Math.max(...block.map((line) => line.length), 0);
-  const col = Math.max(0, Math.floor((width - blockWidth) / 2));
+  const col = Math.max(1, Math.floor((width - blockWidth) / 2));
 
   for (const [index, line] of block.entries()) {
     const row = startRow + index;
