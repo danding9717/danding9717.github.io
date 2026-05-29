@@ -8,7 +8,11 @@
     "start": "astro dev",
     "build": "astro check && astro build",
     "check": "astro check",
-    "preview": "astro preview"
+    "preview": "astro preview",
+    "note:today": "node scripts/note.mjs today",
+    "note:new": "node scripts/note.mjs new",
+    "note:list": "node scripts/note.mjs list",
+    "note:publish": "node scripts/note.mjs publish"
   },
   "dependencies": {
     "@astrojs/mdx": "^6.0.1",

@@ -19,6 +19,72 @@ npm run preview
 
 ## 写文章
 
+这个博客的日常写作入口是 `src/content/drafts/`。你可以直接用 Obsidian 或 Typora 打开这个目录写作；发布脚本会负责补全 frontmatter、整理图片、移动到正式文章目录。
+
+每天开始写：
+
+```bash
+npm run note:today
+```
+
+这会创建或打开当天草稿，例如：
+
+```text
+src/content/drafts/20260529.md
+src/content/drafts/20260529.assets/
+```
+
+正文直接写即可。默认标题就是日期，例如 `20260529`。
+
+查看草稿和已发布文章：
+
+```bash
+npm run note:list
+```
+
+发布当天草稿：
+
+```bash
+npm run note:publish -- 20260529
+```
+
+发布时会自动：
+
+- 为文章生成 frontmatter。
+- 从正文第一段提取摘要。
+- 把 `20260529.assets/` 里的图片复制到 `public/images/20260529/`。
+- 把图片路径改成 `/images/20260529/文件名`。
+- 把文章移动到 `src/content/posts/`。
+- 运行 `npm run build` 检查网站是否可构建。
+
+上线：
+
+```bash
+git add .
+git commit -m "Add note 20260529"
+git push
+```
+
+草稿目录默认被 Git 忽略，避免未完成内容被推到公开仓库。
+
+### Obsidian / Typora 设置
+
+Obsidian 建议把附件位置设为“当前文件同名 assets 文件夹”。Typora 建议把图片复制到 `${filename}.assets`。这样插入图片后，发布命令会自动整理。
+
+如果不想自动打开编辑器：
+
+```bash
+BLOG_NO_OPEN=1 npm run note:today
+```
+
+如果想指定编辑器：
+
+```bash
+BLOG_EDITOR=typora npm run note:today
+```
+
+## 手动文章格式
+
 文章放在 `src/content/posts/` 目录中，支持 `.md` 和 `.mdx`。
 
 新文章 frontmatter 示例：
