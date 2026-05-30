@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import net from 'node:net';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
+import path from 'node:path';
 import readline from 'node:readline';
 import {
   BlogError,
@@ -13,35 +14,32 @@ import {
   listTrashItems,
   listNotes,
   moveNoteToTrash,
-  previewUrl,
+  openFile,
   projectRoot,
   publishDraft,
 } from './blog-core.mjs';
 
 const brandName = "Dan's Notes";
-const maxLogLines = 8;
+const onlineBlogUrl = 'https://danding9717.github.io/';
+const maxLogLines = 12;
+const themeNames = ['light', 'dark', 'diablo'];
 const commands = [
-  { name: '/today', label: 'Today draft', help: 'Open or create today blog' },
-  { name: '/new', label: 'New draft', help: 'Open or create one blog for a date' },
-  { name: '/list', label: 'Posts', help: 'Show drafts and published posts' },
-  { name: '/preview', label: 'Preview', help: 'Start or open local preview' },
+  { name: '/write', label: 'Write', help: 'Open today draft, or use /write YYYYMMDD' },
+  { name: '/posts', label: 'Posts', help: 'Manage drafts, posts, and local trash' },
+  { name: '/preview', label: 'Preview', help: 'Open the deployed blog website' },
   { name: '/publish', label: 'Publish', help: 'Publish a draft, optional date allowed' },
-  { name: '/commit', label: 'Commit', help: 'Build, commit, and push current changes' },
-  { name: '/delete', label: 'Delete', help: 'Move a draft or post into .blog-trash' },
-  { name: '/trash', label: 'Trash', help: 'Show archived deleted files' },
-  { name: '/refresh', label: 'Refresh', help: 'Refresh post and draft status' },
+  { name: '/sync', label: 'Sync', help: 'Build, commit, and push current changes' },
+  { name: '/theme', label: 'Theme', help: 'Cycle theme, or use /theme light|dark|diablo' },
+  { name: '/logs', label: 'Logs', help: 'Show recent activity' },
   { name: '/help', label: 'Help', help: 'Show command help' },
   { name: '/quit', label: 'Quit', help: 'Exit blog admin' },
 ];
 const commandNames = new Set(commands.map((command) => command.name));
 const homeActions = [
-  ['Today draft', '/today'],
-  ['Posts', '/list'],
+  ['Write', '/write'],
+  ['Posts', '/posts'],
   ['Preview', '/preview'],
   ['Publish', '/publish'],
-  ['Commit', '/commit'],
-  ['Delete', '/delete'],
-  ['Quit', '/quit'],
 ];
 const dLogo = [
   'DDDDDD ',
@@ -51,12 +49,37 @@ const dLogo = [
   'D     D',
   'DDDDDD ',
 ];
+const configPath = path.join(os.homedir(), '.config/myblog/config.json');
+const themes = {
+  light: {
+    bg: '\x1b[48;5;255m',
+    border: '\x1b[38;5;250m',
+    faint: '\x1b[38;5;252m',
+    logo: '\x1b[38;5;252m',
+    muted: '\x1b[38;5;246m',
+    accent: '\x1b[38;5;236m',
+    text: '\x1b[38;5;236m',
+  },
+  dark: {
+    bg: '\x1b[48;5;235m',
+    border: '\x1b[38;5;240m',
+    faint: '\x1b[38;5;239m',
+    logo: '\x1b[38;5;239m',
+    muted: '\x1b[38;5;245m',
+    accent: '\x1b[38;5;252m',
+    text: '\x1b[38;5;252m',
+  },
+  diablo: {
+    bg: '\x1b[48;5;232m',
+    border: '\x1b[38;5;88m',
+    faint: '\x1b[38;5;238m',
+    logo: '\x1b[38;5;88m',
+    muted: '\x1b[38;5;244m',
+    accent: '\x1b[38;5;178m',
+    text: '\x1b[38;5;250m',
+  },
+};
 const ansi = {
-  bg: '\x1b[48;5;255m',
-  border: '\x1b[38;5;250m',
-  dark: '\x1b[38;5;236m',
-  faint: '\x1b[38;5;252m',
-  muted: '\x1b[38;5;246m',
   reset: '\x1b[0m',
   strong: '\x1b[1m',
 };
@@ -67,12 +90,16 @@ let input = '';
 let view = 'home';
 let selectedCommandIndex = 0;
 let publishIndex = 0;
-let deleteIndex = 0;
+let postsIndex = 0;
+let postsMode = 'notes';
+let pendingDeletePath = '';
 let trashItems = [];
 let lastPublishedDate = '';
+let pendingSyncMessage = '';
 let busy = false;
-let previewProcess = null;
-let previewStartedHere = false;
+let themeName = 'light';
+let resizeTimer = null;
+let terminalReady = false;
 let cursorTarget = { column: 1, row: 1 };
 
 if (process.argv.includes('--check')) {
@@ -81,6 +108,7 @@ if (process.argv.includes('--check')) {
   process.exit(0);
 }
 
+await loadThemePreference();
 await refreshRows();
 setupTerminal();
 render();
@@ -96,11 +124,16 @@ process.stdin.on('keypress', async (value, key = {}) => {
 
   await handleKey(value, key);
 });
-process.stdout.on('resize', render);
+process.stdout.on('resize', scheduleResizeRender);
 
 async function handleKey(value, key) {
   if (key.name === 'escape') {
+    if (view === 'sync-confirm') {
+      log('Sync postponed. Run /sync when the GitHub Pages update is ready to send.');
+    }
     input = '';
+    pendingDeletePath = '';
+    pendingSyncMessage = '';
     selectedCommandIndex = 0;
     view = 'home';
     render();
@@ -124,8 +157,13 @@ async function handleKey(value, key) {
     return;
   }
 
-  if (view === 'delete') {
-    await handleDeleteKeys(value, key);
+  if (view === 'posts') {
+    await handlePostsKeys(value, key);
+    return;
+  }
+
+  if (view === 'sync-confirm') {
+    await handleSyncConfirmKeys(value, key);
     return;
   }
 
@@ -168,13 +206,13 @@ async function handleCommandInput(value, key) {
 
   const suggestions = getCommandSuggestions();
 
-  if (key.name === 'up' || key.name === 'k') {
+  if (key.name === 'up' || (input === '/' && key.name === 'k')) {
     selectedCommandIndex = Math.max(0, selectedCommandIndex - 1);
     render();
     return;
   }
 
-  if (key.name === 'down' || key.name === 'j') {
+  if (key.name === 'down' || (input === '/' && key.name === 'j')) {
     selectedCommandIndex = Math.min(Math.max(0, suggestions.length - 1), selectedCommandIndex + 1);
     render();
     return;
@@ -219,9 +257,58 @@ async function handlePublishKeys(value, key) {
   }
 }
 
-async function handleDeleteKeys(value, key) {
-  const deletableRows = getDeletableRows();
+async function handlePostsKeys(value, key) {
+  const visibleRows = getVisiblePostRows();
 
+  if (value === '/') {
+    input = '/';
+    pendingDeletePath = '';
+    selectedCommandIndex = 0;
+    render();
+    return;
+  }
+
+  if (key.name === 't') {
+    pendingDeletePath = '';
+    postsMode = postsMode === 'notes' ? 'trash' : 'notes';
+    if (postsMode === 'trash') {
+      await refreshTrashItems();
+    }
+    postsIndex = 0;
+    render();
+    return;
+  }
+
+  if (key.name === 'up' || key.name === 'k') {
+    pendingDeletePath = '';
+    postsIndex = Math.max(0, postsIndex - 1);
+    render();
+    return;
+  }
+
+  if (key.name === 'down' || key.name === 'j') {
+    pendingDeletePath = '';
+    postsIndex = Math.min(Math.max(0, visibleRows.length - 1), postsIndex + 1);
+    render();
+    return;
+  }
+
+  if (postsMode !== 'notes') return;
+
+  const selectedRow = visibleRows[postsIndex];
+  if (key.name === 'return' && selectedRow) {
+    openFile(selectedRow.filePath, { editor: 'Typora' });
+    log(`Opened ${selectedRow.path}`);
+    render();
+    return;
+  }
+
+  if (key.name === 'd' && selectedRow) {
+    await requestOrConfirmDelete(selectedRow);
+  }
+}
+
+async function handleSyncConfirmKeys(value, key) {
   if (value === '/') {
     input = '/';
     selectedCommandIndex = 0;
@@ -229,20 +316,8 @@ async function handleDeleteKeys(value, key) {
     return;
   }
 
-  if (key.name === 'up' || key.name === 'k') {
-    deleteIndex = Math.max(0, deleteIndex - 1);
-    render();
-    return;
-  }
-
-  if (key.name === 'down' || key.name === 'j') {
-    deleteIndex = Math.min(Math.max(0, deletableRows.length - 1), deleteIndex + 1);
-    render();
-    return;
-  }
-
-  if (key.name === 'return' && deletableRows[deleteIndex]) {
-    await deleteSelectedNote(deletableRows[deleteIndex]);
+  if (key.name === 'return') {
+    await syncChanges(pendingSyncMessage);
   }
 }
 
@@ -252,7 +327,11 @@ async function submitCommand() {
   const firstWord = trimmed.split(/\s+/)[0];
   let commandLine = trimmed;
 
-  if (trimmed === '/' || !commandNames.has(firstWord)) {
+  if (
+    trimmed === '/' ||
+    (!commandNames.has(firstWord) &&
+      suggestions[selectedCommandIndex]?.name.startsWith(firstWord))
+  ) {
     commandLine = suggestions[selectedCommandIndex]?.name ?? trimmed;
   }
 
@@ -265,9 +344,9 @@ async function executeCommand(commandLine) {
   const [name = '', ...args] = commandLine.trim().split(/\s+/);
 
   switch (name.toLowerCase()) {
-    case '/today':
+    case '/write':
       await runTask(async () => {
-        const result = await createDraft(compactDateForToday(), {
+        const result = await createDraft(args[0] || compactDateForToday(), {
           editor: 'Typora',
           open: true,
         });
@@ -275,29 +354,10 @@ async function executeCommand(commandLine) {
         await refreshRows();
         view = 'home';
       });
-      return;
-
-    case '/new':
-      await runTask(async () => {
-        const result = await createDraft(args[0], {
-          editor: 'Typora',
-          open: true,
-        });
-        logMany(result.messages);
-        await refreshRows();
-        view = 'home';
-      });
-      return;
-
-    case '/list':
-      await refreshRows();
-      view = 'list';
-      log('Posts refreshed.');
-      render();
       return;
 
     case '/preview':
-      await runTask(startPreview);
+      openOnlinePreview();
       return;
 
     case '/publish':
@@ -308,25 +368,20 @@ async function executeCommand(commandLine) {
       }
       return;
 
-    case '/commit':
-      await commitChanges(args.join(' '));
+    case '/sync':
+      await syncChanges(args.join(' '));
       return;
 
-    case '/delete':
-      if (args[0]) {
-        await deleteByIdentifier(args[0]);
-      } else {
-        await openDeleteFlow();
-      }
+    case '/posts':
+      await openPosts();
       return;
 
-    case '/trash':
-      await openTrash();
+    case '/theme':
+      await changeTheme(args[0]);
       return;
 
-    case '/refresh':
-      await refreshRows();
-      log('Refreshed.');
+    case '/logs':
+      view = 'logs';
       render();
       return;
 
@@ -378,7 +433,7 @@ async function publishByDate(date) {
       log(buildSummary(result.buildOutput));
     }
     await refreshRows();
-    view = 'list';
+    openSyncConfirmation(result.compactDate || date);
   });
 }
 
@@ -392,122 +447,79 @@ async function publishSelectedDraft(row) {
       log(buildSummary(result.buildOutput));
     }
     await refreshRows();
-    view = 'list';
+    openSyncConfirmation(result.compactDate || row.compact);
   });
 }
 
-async function commitChanges(message) {
+function openSyncConfirmation(compactDate) {
+  pendingSyncMessage = `Add note ${compactDate}`;
+  log('Publish ready. Press Enter to sync, or Esc to sync later.');
+  view = 'sync-confirm';
+}
+
+async function syncChanges(message) {
   await runTask(async () => {
-    const commitMessage = message.trim() || (lastPublishedDate ? `Add note ${lastPublishedDate}` : 'Update blog');
-    log(`Committing: ${commitMessage}`);
+    const commitMessage =
+      message.trim() ||
+      pendingSyncMessage ||
+      (lastPublishedDate ? `Add note ${lastPublishedDate}` : 'Update blog');
+    log(`Syncing: ${commitMessage}`);
     const result = commitAndPush(commitMessage, { stdio: 'pipe' });
     logMany(result.messages);
     if (result.buildOutput) {
       log(buildSummary(result.buildOutput));
     }
+    if (!result.noChanges) {
+      log('GitHub Pages deploys shortly. Run /preview after deployment.');
+    }
+    pendingSyncMessage = '';
     await refreshRows();
     view = 'home';
   });
 }
 
-async function openDeleteFlow() {
+async function openPosts() {
   await refreshRows();
-  const deletableRows = getDeletableRows();
+  await refreshTrashItems();
+  postsIndex = 0;
+  postsMode = 'notes';
+  pendingDeletePath = '';
+  view = 'posts';
+  render();
+}
 
-  if (!deletableRows.length) {
-    log('No drafts or posts to delete.');
-    view = 'home';
+async function requestOrConfirmDelete(row) {
+  if (!['draft', 'post'].includes(row.status)) {
+    pendingDeletePath = '';
+    log(`Cannot delete ${row.status} content from MyBlog.`);
     render();
     return;
   }
 
-  deleteIndex = 0;
-  view = 'delete';
-  log('Choose a draft or post, then press Enter.');
-  render();
-}
+  if (pendingDeletePath !== row.filePath) {
+    pendingDeletePath = row.filePath;
+    log(`Press d again to move ${row.path} to .blog-trash.`);
+    render();
+    return;
+  }
 
-async function deleteByIdentifier(identifier) {
-  await runTask(async () => {
-    log(`Deleting ${identifier}...`);
-    const result = await moveNoteToTrash(identifier);
-    logMany(result.messages);
-    await refreshRows();
-    await refreshTrashItems();
-    view = 'trash';
-  });
-}
-
-async function deleteSelectedNote(row) {
   await runTask(async () => {
     log(`Deleting ${row.title}...`);
     const result = await moveNoteToTrash(row);
     logMany(result.messages);
     await refreshRows();
     await refreshTrashItems();
-    view = 'trash';
+    pendingDeletePath = '';
+    postsIndex = clamp(postsIndex, 0, Math.max(0, rows.length - 1));
+    view = 'posts';
   });
 }
 
-async function openTrash() {
-  await refreshTrashItems();
-  view = 'trash';
-  log('Trash refreshed.');
+function openOnlinePreview() {
+  openUrl(onlineBlogUrl);
+  log(`Opened deployed blog: ${onlineBlogUrl}`);
+  view = 'home';
   render();
-}
-
-async function startPreview() {
-  if (await isPreviewReachable()) {
-    log(`Preview is already running: ${previewUrl}`);
-    openUrl(previewUrl);
-    view = 'home';
-    return;
-  }
-
-  log('Starting local preview...');
-  previewProcess = spawn(
-    'npm',
-    ['run', 'dev', '--', '--host', '127.0.0.1', '--port', '4321'],
-    {
-      cwd: projectRoot,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    },
-  );
-  previewStartedHere = true;
-
-  previewProcess.stdout.on('data', (chunk) => {
-    for (const line of stripAnsi(String(chunk)).split(/\r?\n/).filter(Boolean)) {
-      log(line);
-    }
-    render();
-  });
-
-  previewProcess.stderr.on('data', (chunk) => {
-    for (const line of stripAnsi(String(chunk)).split(/\r?\n/).filter(Boolean)) {
-      log(line);
-    }
-    render();
-  });
-
-  previewProcess.on('exit', (code) => {
-    if (code !== null && code !== 0) {
-      log(`Preview exited: ${code}`);
-    }
-    previewProcess = null;
-    render();
-  });
-
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    if (await isPreviewReachable()) {
-      log(`Preview ready: ${previewUrl}`);
-      openUrl(previewUrl);
-      view = 'home';
-      return;
-    }
-    await sleep(500);
-  }
-
-  throw new BlogError('Preview timed out. Check the log.');
 }
 
 function openUrl(url) {
@@ -516,27 +528,52 @@ function openUrl(url) {
   }
 }
 
-async function isPreviewReachable() {
-  return new Promise((resolve) => {
-    const socket = net.createConnection({ host: '127.0.0.1', port: 4321 });
-    const finish = (value) => {
-      socket.destroy();
-      resolve(value);
-    };
-
-    socket.setTimeout(700);
-    socket.once('connect', () => finish(true));
-    socket.once('timeout', () => finish(false));
-    socket.once('error', () => finish(false));
-  });
-}
-
 async function refreshRows() {
   rows = await listNotes();
 }
 
 async function refreshTrashItems() {
   trashItems = await listTrashItems();
+}
+
+async function changeTheme(requestedTheme) {
+  await runTask(async () => {
+    const nextTheme = requestedTheme
+      ? requestedTheme.toLowerCase()
+      : themeNames[(themeNames.indexOf(themeName) + 1) % themeNames.length];
+
+    if (!Object.hasOwn(themes, nextTheme)) {
+      throw new BlogError('主题必须是 light、dark 或 diablo。');
+    }
+
+    themeName = nextTheme;
+    try {
+      await saveThemePreference();
+      log(`Theme switched to ${themeName}.`);
+    } catch {
+      log(`Theme switched to ${themeName}, but the local preference could not be saved.`);
+    }
+    view = 'home';
+  });
+}
+
+async function loadThemePreference() {
+  try {
+    const config = JSON.parse(await readFile(configPath, 'utf8'));
+    if (Object.hasOwn(themes, config.theme)) {
+      themeName = config.theme;
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      log('Theme config could not be read. Using light.');
+    }
+    themeName = 'light';
+  }
+}
+
+async function saveThemePreference() {
+  await mkdir(path.dirname(configPath), { recursive: true });
+  await writeFile(configPath, `${JSON.stringify({ theme: themeName }, null, 2)}\n`, 'utf8');
 }
 
 async function runTask(task) {
@@ -566,58 +603,125 @@ function setupTerminal() {
 
   process.stdin.setRawMode(true);
   process.stdin.resume();
-  process.stdout.write('\x1b[?25h');
+  terminalReady = true;
+  process.stdout.write('\x1b[?1049h\x1b[?7h\x1b[?25h');
+  process.once('exit', restoreTerminal);
+  process.once('SIGTERM', () => void exitAdmin());
+  process.once('SIGHUP', () => void exitAdmin());
+}
+
+function scheduleResizeRender() {
+  if (resizeTimer) {
+    clearTimeout(resizeTimer);
+  }
+  resizeTimer = setTimeout(() => {
+    resizeTimer = null;
+    render();
+  }, 35);
 }
 
 function render() {
-  const width = process.stdout.columns || 100;
-  const height = Math.max(18, process.stdout.rows || 32);
-  const lines = Array.from({ length: height }, () => ''.padEnd(width, ' '));
+  const width = Math.max(1, process.stdout.columns || 100);
+  const height = Math.max(1, process.stdout.rows || 32);
+  const lines = Array.from({ length: height }, () => Array(width).fill(' '));
   const styles = Array.from({ length: height }, () => 'normal');
 
-  put(lines, styles, 1, 2, displayProjectPath(), 'muted');
-
-  if (input.startsWith('/')) {
+  if (isTinyLayout(width, height)) {
+    renderTiny(lines, styles, width, height);
+  } else if (input.startsWith('/')) {
     renderCommandPalette(lines, styles, width, height);
   } else if (view === 'publish') {
     renderPublish(lines, styles, width, height);
-  } else if (view === 'delete') {
-    renderDelete(lines, styles, width, height);
-  } else if (view === 'list') {
-    renderList(lines, styles, width, height);
-  } else if (view === 'trash') {
-    renderTrash(lines, styles, width, height);
+  } else if (view === 'posts') {
+    renderPosts(lines, styles, width, height);
+  } else if (view === 'sync-confirm') {
+    renderSyncConfirm(lines, styles, width, height);
+  } else if (view === 'logs') {
+    renderLogs(lines, styles, width, height);
   } else if (view === 'help') {
     renderHelp(lines, styles, width, height);
   } else {
     renderHome(lines, styles, width, height);
   }
 
-  renderFooter(lines, styles, width, height);
+  if (!isTinyLayout(width, height)) {
+    renderFooter(lines, styles, width, height);
+  }
 
   const body = lines
-    .map((line, index) => paint(line.slice(0, width).padEnd(width, ' '), styles[index]))
-    .join('\n');
+    .map((line, index) => paint(padDisplayWidth(line.join(''), width), styles[index]))
+    .join('\r\n');
 
-  process.stdout.write(`\x1b[2J\x1b[H${body}\x1b[${cursorTarget.row};${cursorTarget.column}H`);
+  process.stdout.write(
+    `${ansi.reset}\x1b[?7l\x1b[2J\x1b[H${body}\x1b[${cursorTarget.row};${cursorTarget.column}H\x1b[?7h`,
+  );
 }
 
 function renderHome(lines, styles, width, height) {
-  const logoStart = clamp(Math.floor(height * 0.25), 3, Math.max(3, height - 16));
-  centerBlock(lines, styles, dLogo, logoStart, width, 'faint');
-
-  const actionRows = homeActions.map(
-    ([label, command]) => `${label.padEnd(16, ' ')} ${command}`,
-  );
-  const actionsStart = Math.min(height - 10, logoStart + dLogo.length + 3);
-  centerBlock(lines, styles, actionRows, actionsStart, width, 'strong');
-
-  const lastLines = logs.slice(-3);
-  const logStart = actionsStart + actionRows.length + 2;
-  const availableLogRows = Math.max(0, height - 4 - logStart);
-  if (availableLogRows > 0) {
-    centerBlock(lines, styles, lastLines.slice(-availableLogRows), logStart, width, 'muted');
+  if (isCompactLayout(width, height)) {
+    renderCompactHome(lines, styles, width, height);
+    return;
   }
+
+  const logoStart = clamp(Math.floor((height - 16) / 2), 2, 6);
+  centerBlock(lines, styles, dLogo, logoStart, width, 'logo');
+  centerBlock(lines, styles, [dashboardSummary()], logoStart + 8, width, 'muted');
+  centerBlock(lines, styles, homeActionRows(width), logoStart + 10, width, 'accent');
+}
+
+function renderCompactHome(lines, styles, width, height) {
+  const content = [
+    'MyBlog',
+    dashboardSummary(),
+    '',
+    ...homeActionRows(width),
+  ];
+  const availableRows = Math.max(0, height - 4);
+
+  for (let index = 0; index < Math.min(content.length, availableRows); index += 1) {
+    put(lines, styles, index + 2, 2, content[index], index === 0 ? 'strong' : 'normal');
+  }
+}
+
+function renderTiny(lines, styles, width, height) {
+  if (height > 1) {
+    put(lines, styles, 1, 1, `myblog · ${width}x${height} · enlarge window`, 'muted');
+  }
+
+  const inputRow = height;
+  const displayInput = startEllipsis(input, Math.max(0, width - 2));
+  const prompt = `› ${displayInput}`;
+  put(lines, styles, inputRow, 1, prompt, 'normal');
+  cursorTarget = {
+    column: clamp(displayWidth(prompt) + 1, 1, width),
+    row: inputRow,
+  };
+}
+
+function dashboardSummary() {
+  const posts = rows.filter((row) => row.status === 'post').length;
+  const drafts = rows.filter((row) => row.status.startsWith('draft')).length;
+  return `Posts ${posts}   Drafts ${drafts}   Theme ${themeName}`;
+}
+
+function homeActionRows(width) {
+  if (width >= 64) {
+    return [
+      '/write     New or open draft    /posts     Manage content',
+      '/preview   Open deployed blog   /publish   Publish draft',
+    ];
+  }
+
+  return homeActions
+    .map(([label, command]) => `${command.padEnd(10, ' ')} ${label}`);
+}
+
+function isCompactLayout(width, height) {
+  return width < 72 || height < 22;
+}
+
+function isTinyLayout(width, height) {
+  return width < 40 || height < 8;
 }
 
 function renderCommandPalette(lines, styles, width, height) {
@@ -661,43 +765,71 @@ function renderPublish(lines, styles, width, height) {
   centerBlock(lines, styles, panelRows, start, width, 'normal', publishIndex + 2);
 }
 
-function renderDelete(lines, styles, width, height) {
-  const deletableRows = getDeletableRows();
-  const panelRows = ['Move to .blog-trash', ''];
+function renderPosts(lines, styles, width, height) {
+  const contentWidth = Math.min(96, Math.max(28, width - 8));
+  const col = Math.max(2, Math.floor((width - contentWidth) / 2));
 
-  if (deletableRows.length) {
-    for (const [index, row] of deletableRows.entries()) {
-      const prefix = index === deleteIndex ? '> ' : '  ';
-      panelRows.push(`${prefix}${row.status.padEnd(5, ' ')} ${row.compact}  ${row.path}`);
+  if (postsMode === 'trash') {
+    const content = ['Local trash', '', ...wrapLines(formatTrashItems(trashItems), contentWidth)];
+    for (let index = 0; index < Math.min(content.length, height - 7); index += 1) {
+      put(lines, styles, index + 3, col, content[index], index === 0 ? 'accent' : 'normal');
     }
-  } else {
-    panelRows.push('No drafts or posts to delete.');
+    put(lines, styles, height - 4, col, 't posts  / command  Esc home', 'muted');
+    return;
   }
 
-  panelRows.push('', 'Enter delete  / command  Esc home');
-  const start = clamp(Math.floor(height * 0.24), 3, Math.max(3, height - panelRows.length - 6));
-  centerBlock(lines, styles, panelRows, start, width, 'normal', deleteIndex + 2);
-}
+  const visibleRows = getVisiblePostRows();
+  postsIndex = clamp(postsIndex, 0, Math.max(0, visibleRows.length - 1));
+  put(lines, styles, 3, col, 'Posts', 'accent');
+  put(lines, styles, 4, col, 'Enter open  d d trash  t local trash  / command  Esc home', 'muted');
 
-function renderList(lines, styles, width, height) {
-  const contentWidth = Math.min(96, Math.max(28, width - 8));
-  const content = ['Posts', '', ...wrapLines(formatNoteRows(rows), contentWidth)];
-  const start = 4;
-  const col = Math.max(2, Math.floor((width - contentWidth) / 2));
+  if (!visibleRows.length) {
+    put(lines, styles, 6, col, 'No drafts or posts yet.', 'normal');
+    return;
+  }
 
-  for (let index = 0; index < Math.min(content.length, height - 9); index += 1) {
-    put(lines, styles, start + index, col, content[index], index === 0 ? 'strong' : 'normal');
+  for (let index = 0; index < Math.min(visibleRows.length, height - 10); index += 1) {
+    const row = visibleRows[index];
+    const prefix = index === postsIndex ? '> ' : '  ';
+    put(
+      lines,
+      styles,
+      index + 6,
+      col,
+      `${prefix}${padDisplayWidth(row.status, 6)} ${padDisplayWidth(row.date, 10)} ${row.title}  ${row.path}`,
+      index === postsIndex ? 'selected' : 'normal',
+    );
+  }
+
+  if (pendingDeletePath) {
+    put(lines, styles, height - 4, col, `Press d again: ${pendingDeletePath}`, 'accent');
   }
 }
 
-function renderTrash(lines, styles, width, height) {
-  const contentWidth = Math.min(96, Math.max(28, width - 8));
-  const content = ['Trash', '', ...wrapLines(formatTrashItems(trashItems), contentWidth)];
-  const start = 4;
-  const col = Math.max(2, Math.floor((width - contentWidth) / 2));
+function renderSyncConfirm(lines, styles, width, height) {
+  centerBlock(
+    lines,
+    styles,
+    [
+      'Publish ready',
+      '',
+      pendingSyncMessage || 'Update blog',
+      '',
+      'Enter sync to GitHub   Esc sync later',
+    ],
+    clamp(Math.floor(height * 0.34), 3, Math.max(3, height - 10)),
+    width,
+    'normal',
+  );
+}
 
-  for (let index = 0; index < Math.min(content.length, height - 9); index += 1) {
-    put(lines, styles, start + index, col, content[index], index === 0 ? 'strong' : 'normal');
+function renderLogs(lines, styles, width, height) {
+  const contentWidth = Math.min(96, Math.max(28, width - 8));
+  const col = Math.max(2, Math.floor((width - contentWidth) / 2));
+  const content = ['Activity', '', ...(logs.length ? logs : ['No activity yet.'])];
+
+  for (let index = 0; index < Math.min(content.length, height - 7); index += 1) {
+    put(lines, styles, index + 3, col, content[index], index === 0 ? 'accent' : 'normal');
   }
 }
 
@@ -714,13 +846,14 @@ function renderHelp(lines, styles, width, height) {
   const col = Math.max(2, Math.floor((width - contentWidth) / 2));
 
   for (let index = 0; index < Math.min(content.length, height - 9); index += 1) {
-    put(lines, styles, start + index, col, content[index], index === 0 ? 'strong' : 'normal');
+    put(lines, styles, start + index, col, content[index], index === 0 ? 'accent' : 'normal');
   }
 }
 
 function renderFooter(lines, styles, width, height) {
   const margin = width > 54 ? 2 : 0;
   const boxWidth = Math.max(4, width - margin * 2);
+  const leftColumn = margin + 1;
   const topRow = Math.max(1, height - 2);
   const inputRow = Math.max(1, height - 1);
   const bottomRow = Math.max(1, height);
@@ -735,15 +868,15 @@ function renderFooter(lines, styles, width, height) {
         : 'Tip: Press / to open commands.';
   const meta = ` ${brandName} · myblog `;
   const maxInput = Math.max(1, boxWidth - 6);
-  const displayInput = input.length > maxInput ? `...${input.slice(-(maxInput - 3))}` : input;
+  const displayInput = startEllipsis(input, maxInput);
   const inputText = `› ${displayInput}`;
 
-  put(lines, styles, tipRow, margin + 1, tip, 'muted');
+  put(lines, styles, tipRow, leftColumn, tip, 'muted');
   put(
     lines,
     styles,
     topRow,
-    margin,
+    leftColumn,
     `┌${'─'.repeat(Math.max(0, boxWidth - 2))}┐`,
     'border',
   );
@@ -751,20 +884,20 @@ function renderFooter(lines, styles, width, height) {
     lines,
     styles,
     inputRow,
-    margin,
-    `│ ${inputText.padEnd(boxWidth - 4, ' ')} │`,
+    leftColumn,
+    `│ ${padDisplayWidth(inputText, boxWidth - 4)} │`,
     'normal',
   );
 
   let bottom = `└${'─'.repeat(Math.max(0, boxWidth - 2))}┘`;
-  if (meta.length < boxWidth - 4) {
-    const insertAt = Math.max(1, boxWidth - meta.length - 2);
-    bottom = `${bottom.slice(0, insertAt)}${meta}${bottom.slice(insertAt + meta.length)}`;
+  if (displayWidth(meta) < boxWidth - 4) {
+    const insertAt = Math.max(1, boxWidth - displayWidth(meta) - 2);
+    bottom = `${bottom.slice(0, insertAt)}${meta}${bottom.slice(insertAt + displayWidth(meta))}`;
   }
-  put(lines, styles, bottomRow, margin, bottom, 'muted');
+  put(lines, styles, bottomRow, leftColumn, bottom, 'muted');
 
   cursorTarget = {
-    column: Math.min(width, margin + 4 + displayInput.length),
+    column: Math.min(width, leftColumn + 4 + displayWidth(displayInput)),
     row: clamp(inputRow, 1, height),
   };
 }
@@ -793,17 +926,12 @@ function getDraftRows() {
   return rows.filter((row) => row.status === 'draft');
 }
 
-function getDeletableRows() {
-  return rows.filter((row) => ['draft', 'post'].includes(row.status));
-}
-
-function displayProjectPath() {
-  const home = os.homedir();
-  return projectRoot.startsWith(home) ? projectRoot.replace(home, '~') : projectRoot;
+function getVisiblePostRows() {
+  return postsMode === 'notes' ? rows : [];
 }
 
 function centerBlock(lines, styles, block, startRow, width, styleName, selectedRelativeIndex = -1) {
-  const blockWidth = Math.max(...block.map((line) => line.length), 0);
+  const blockWidth = Math.max(...block.map((line) => displayWidth(line)), 0);
   const col = Math.max(1, Math.floor((width - blockWidth) / 2));
 
   for (const [index, line] of block.entries()) {
@@ -818,21 +946,35 @@ function put(lines, styles, rowNumber, columnNumber, text, styleName = 'normal')
   const column = columnNumber - 1;
   if (row < 0 || row >= lines.length || column < 0 || column >= lines[row].length) return;
 
-  const available = lines[row].length - column;
-  const clipped = String(text).slice(0, available);
-  lines[row] =
-    lines[row].slice(0, column) + clipped + lines[row].slice(column + clipped.length);
+  let cursor = column;
+  for (const character of String(text)) {
+    const width = characterWidth(character);
+    if (width === 0) {
+      appendCombiningCharacter(lines[row], cursor, character);
+      continue;
+    }
+    if (cursor + width > lines[row].length) break;
+
+    lines[row][cursor] = character;
+    for (let offset = 1; offset < width; offset += 1) {
+      lines[row][cursor + offset] = '';
+    }
+    cursor += width;
+  }
   styles[row] = styleName;
 }
 
 function paint(line, styleName) {
+  const theme = themes[themeName];
   const palette = {
-    border: `${ansi.bg}${ansi.border}`,
-    faint: `${ansi.bg}${ansi.faint}`,
-    muted: `${ansi.bg}${ansi.muted}`,
-    normal: `${ansi.bg}${ansi.dark}`,
-    selected: `${ansi.bg}${ansi.strong}${ansi.dark}`,
-    strong: `${ansi.bg}${ansi.strong}${ansi.dark}`,
+    border: `${theme.bg}${theme.border}`,
+    faint: `${theme.bg}${theme.faint}`,
+    logo: `${theme.bg}${theme.logo}`,
+    muted: `${theme.bg}${theme.muted}`,
+    normal: `${theme.bg}${theme.text}`,
+    accent: `${theme.bg}${ansi.strong}${theme.accent}`,
+    selected: `${theme.bg}${ansi.strong}${theme.accent}`,
+    strong: `${theme.bg}${ansi.strong}${theme.text}`,
   };
   return `${palette[styleName] ?? palette.normal}${line}${ansi.reset}`;
 }
@@ -842,13 +984,116 @@ function wrapLines(text, width) {
 }
 
 function wrapLine(line, width) {
-  if (line.length <= width) return [line];
+  if (displayWidth(line) <= width) return [line];
 
   const chunks = [];
-  for (let index = 0; index < line.length; index += width) {
-    chunks.push(line.slice(index, index + width));
+  let chunk = '';
+  let chunkWidth = 0;
+
+  for (const character of line) {
+    const widthOfCharacter = characterWidth(character);
+    if (chunk && chunkWidth + widthOfCharacter > width) {
+      chunks.push(chunk);
+      chunk = '';
+      chunkWidth = 0;
+    }
+    chunk += character;
+    chunkWidth += widthOfCharacter;
   }
+  if (chunk) chunks.push(chunk);
+
   return chunks;
+}
+
+function displayWidth(value) {
+  let width = 0;
+  for (const character of String(value)) {
+    width += characterWidth(character);
+  }
+  return width;
+}
+
+function characterWidth(character) {
+  const codePoint = character.codePointAt(0);
+  if (
+    codePoint === 0 ||
+    codePoint < 32 ||
+    (codePoint >= 0x7f && codePoint < 0xa0) ||
+    /\p{Mark}/u.test(character) ||
+    codePoint === 0x200d ||
+    (codePoint >= 0xfe00 && codePoint <= 0xfe0f)
+  ) {
+    return 0;
+  }
+
+  return isWideCodePoint(codePoint) ? 2 : 1;
+}
+
+function isWideCodePoint(codePoint) {
+  return (
+    codePoint >= 0x1100 &&
+    (codePoint <= 0x115f ||
+      codePoint === 0x2329 ||
+      codePoint === 0x232a ||
+      (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) ||
+      (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+      (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+      (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+      (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
+      (codePoint >= 0xff00 && codePoint <= 0xff60) ||
+      (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+      (codePoint >= 0x1f300 && codePoint <= 0x1faff) ||
+      (codePoint >= 0x20000 && codePoint <= 0x3fffd))
+  );
+}
+
+function appendCombiningCharacter(line, cursor, character) {
+  for (let index = Math.min(cursor - 1, line.length - 1); index >= 0; index -= 1) {
+    if (line[index]) {
+      line[index] += character;
+      return;
+    }
+  }
+}
+
+function clipDisplayWidth(value, width) {
+  if (width <= 0) return '';
+
+  let result = '';
+  let used = 0;
+  for (const character of String(value)) {
+    const widthOfCharacter = characterWidth(character);
+    if (used + widthOfCharacter > width) break;
+    result += character;
+    used += widthOfCharacter;
+  }
+  return result;
+}
+
+function padDisplayWidth(value, width) {
+  const clipped = clipDisplayWidth(value, Math.max(0, width));
+  return `${clipped}${' '.repeat(Math.max(0, width - displayWidth(clipped)))}`;
+}
+
+function startEllipsis(value, width) {
+  const text = String(value);
+  if (displayWidth(text) <= width) return text;
+  if (width <= 3) return '.'.repeat(Math.max(0, width));
+
+  const targetWidth = width - 3;
+  const characters = Array.from(text);
+  let result = '';
+  let used = 0;
+
+  for (let index = characters.length - 1; index >= 0; index -= 1) {
+    const character = characters[index];
+    const widthOfCharacter = characterWidth(character);
+    if (used + widthOfCharacter > targetWidth) break;
+    result = `${character}${result}`;
+    used += widthOfCharacter;
+  }
+
+  return `...${result}`;
 }
 
 function log(message) {
@@ -875,10 +1120,6 @@ function buildSummary(output) {
   return diagnostics.length ? diagnostics.join('\n') : lines.slice(-8).join('\n');
 }
 
-function stripAnsi(value) {
-  return value.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
-}
-
 function isPrintable(value) {
   return typeof value === 'string' && value.length > 0 && !/[\x00-\x1f\x7f]/.test(value);
 }
@@ -887,19 +1128,21 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function exitAdmin() {
-  if (previewStartedHere && previewProcess) {
-    previewProcess.kill('SIGTERM');
-    previewProcess = null;
-  }
-
-  process.stdout.write(`${ansi.reset}\x1b[2J\x1b[H`);
+  restoreTerminal();
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(false);
   }
   process.exit(0);
+}
+
+function restoreTerminal() {
+  if (!terminalReady) return;
+
+  terminalReady = false;
+  if (resizeTimer) {
+    clearTimeout(resizeTimer);
+    resizeTimer = null;
+  }
+  process.stdout.write(`${ansi.reset}\x1b[?7h\x1b[?25h\x1b[?1049l`);
 }

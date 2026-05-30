@@ -19,7 +19,6 @@ export const draftsDir = path.join(projectRoot, 'src/content/drafts');
 export const postsDir = path.join(projectRoot, 'src/content/posts');
 export const publicImagesDir = path.join(projectRoot, 'public/images');
 export const trashDir = path.join(projectRoot, '.blog-trash');
-export const previewUrl = 'http://127.0.0.1:4321/';
 
 const blogTimezone = process.env.BLOG_TIMEZONE || 'Asia/Shanghai';
 const imageExtensions = new Set([

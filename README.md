@@ -37,56 +37,25 @@ myblog
 
 后台提供几个固定动作：
 
-- `/today`：创建或打开今天的 Markdown，并用 Typora 打开。同一天已有草稿或文章时会直接复用。
-- `/new 20260530`：创建或打开指定日期草稿。同一天只允许一篇 blog。
-- `/list`：查看草稿和已发布文章。
-- `/preview`：启动网站预览，并打开 `http://127.0.0.1:4321/`。
+- `/write`：创建或打开今天的 Markdown，并用 Typora 打开。同一天已有草稿或文章时会直接复用。
+- `/write 20260530`：创建或打开指定日期草稿。同一天只允许一篇 blog。
+- `/posts`：统一管理草稿、已发布文章和本地回收站。
+- `/preview`：打开已经部署的线上博客：`https://danding9717.github.io/`。
 - `/publish`：选择草稿发布，自动整理 frontmatter、图片并运行构建检查。
 - `/publish 20260529`：直接发布指定日期草稿。
-- `/commit`：运行构建检查，提交当前改动并推送到 GitHub。
-- `/commit Add note 20260529`：使用自定义提交信息提交并推送。
-- `/delete`：选择草稿或文章，移动到本地回收站。
-- `/delete 20260529`：直接把指定草稿或文章移入本地回收站。
-- `/trash`：查看本地回收站内容。
+- `/sync`：运行构建检查，提交当前改动并推送到 GitHub。
+- `/sync Add note 20260529`：使用自定义提交信息同步。
+- `/theme`：按 `light -> dark -> diablo -> light` 顺序切换主题。
+- `/theme light`、`/theme dark`、`/theme diablo`：直接切换指定主题。
+- `/logs`：查看最近的后台操作记录。
 - `/help`：查看命令帮助。
-- `/quit`：关闭后台。如果预览服务由后台启动，也会一起关闭。
+- `/quit`：关闭后台。
 
 键盘操作：按 `/` 调出命令，`Enter` 执行，`↑/↓` 或 `j/k` 移动，`Esc` 返回首页。
 
-如果只想在项目目录里临时启动，也可以用：
+在 `/posts` 页面中，按 `Enter` 打开选中的草稿或文章，按 `t` 切换本地回收站。删除内容时需要连续按两次 `d`，文件会移动到 `.blog-trash/`，不会立刻抹掉。
 
-```bash
-npm run admin
-```
-
-### 命令行备用方式
-
-每天开始写：
-
-```bash
-npm run note:today
-```
-
-这会创建或打开当天草稿，例如：
-
-```text
-src/content/drafts/20260529.md
-src/content/drafts/20260529.assets/
-```
-
-正文直接写即可。默认标题就是日期，例如 `20260529`。
-
-查看草稿和已发布文章：
-
-```bash
-npm run note:list
-```
-
-发布当天草稿：
-
-```bash
-npm run note:publish -- 20260529
-```
+发布完成后，后台会询问是否立即同步到 GitHub。按 `Enter` 同步，按 `Esc` 稍后处理。GitHub Pages 部署需要一点时间；部署完成后用 `/preview` 查看线上版本。未同步的本地内容不会出现在 `/preview` 打开的页面中。
 
 发布时会自动：
 
@@ -100,7 +69,7 @@ npm run note:publish -- 20260529
 上线可以直接在后台执行：
 
 ```bash
-/commit
+/sync
 ```
 
 也可以继续手动执行：
@@ -113,23 +82,17 @@ git push
 
 草稿目录默认被 Git 忽略，避免未完成内容被推到公开仓库。
 
-删除草稿或文章时，后台不会真正抹掉文件，而是移动到 `.blog-trash/`。这个目录只保存在本地，并已加入 `.gitignore`，不会公开到 GitHub。
+后台主题选择会保存在 `~/.config/myblog/config.json`，只对本机 TUI 生效，不会提交到 GitHub。拖动终端边框时，界面会根据窗口尺寸自动切换为标准、紧凑或极小布局；极小布局仍保留命令输入框。
+
+如果只想在项目目录里临时启动，也可以用：
+
+```bash
+npm run admin
+```
 
 ### Obsidian / Typora 设置
 
 Obsidian 建议把附件位置设为“当前文件同名 assets 文件夹”。Typora 建议把图片复制到 `${filename}.assets`。这样插入图片后，发布命令会自动整理。
-
-如果不想自动打开编辑器：
-
-```bash
-BLOG_NO_OPEN=1 npm run note:today
-```
-
-如果想指定编辑器：
-
-```bash
-BLOG_EDITOR=typora npm run note:today
-```
 
 ## 手动文章格式
 
