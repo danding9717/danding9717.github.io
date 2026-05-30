@@ -21,8 +21,8 @@ import {
 const brandName = "Dan's Notes";
 const maxLogLines = 8;
 const commands = [
-  { name: '/today', label: 'Today draft', help: 'Open or create today draft' },
-  { name: '/new', label: 'New draft', help: 'Create draft for a date, e.g. /new 20260530' },
+  { name: '/today', label: 'Today draft', help: 'Open or create today blog' },
+  { name: '/new', label: 'New draft', help: 'Open or create one blog for a date' },
   { name: '/list', label: 'Posts', help: 'Show drafts and published posts' },
   { name: '/preview', label: 'Preview', help: 'Start or open local preview' },
   { name: '/publish', label: 'Publish', help: 'Publish a draft, optional date allowed' },
@@ -560,7 +560,7 @@ async function runTask(task) {
 
 function setupTerminal() {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    console.log('请在交互式终端中运行 blog-admin。');
+    console.log('请在交互式终端中运行 myblog。');
     process.exit(1);
   }
 
@@ -733,7 +733,7 @@ function renderFooter(lines, styles, width, height) {
       : latestLog
         ? `${latestLog}  ·  Press / for commands.`
         : 'Tip: Press / to open commands.';
-  const meta = ` ${brandName} · blog-admin `;
+  const meta = ` ${brandName} · myblog `;
   const maxInput = Math.max(1, boxWidth - 6);
   const displayInput = input.length > maxInput ? `...${input.slice(-(maxInput - 3))}` : input;
   const inputText = `› ${displayInput}`;

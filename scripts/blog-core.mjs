@@ -93,32 +93,50 @@ export async function createDraft(compactDate, options = {}) {
   await ensureBaseDirs();
 
   const normalizedDate = normalizeCompactDate(compactDate);
-  const draftPath = path.join(draftsDir, `${normalizedDate}.md`);
   const assetsDir = path.join(draftsDir, `${normalizedDate}.assets`);
-  const publishedPath = path.join(postsDir, `${normalizedDate}.md`);
+  const existingDraftPath = findExistingDraft(normalizedDate);
+  const publishedMatches = await findPublishedNotesByDate(toIsoDate(normalizedDate));
   const messages = [];
 
-  if (existsSync(publishedPath)) {
-    messages.push(`当天文章已发布：${relative(publishedPath)}`);
+  if (existingDraftPath) {
+    await mkdir(assetsDir, { recursive: true });
+    messages.push(`当天草稿已存在：${relative(existingDraftPath)}`);
+    messages.push(`图片目录：${relative(assetsDir)}`);
     if (options.open) {
-      openFile(publishedPath, options);
+      openFile(existingDraftPath, options);
     }
     return {
       assetsDir,
-      filePath: publishedPath,
+      filePath: existingDraftPath,
+      messages,
+      status: 'draft',
+    };
+  }
+
+  if (publishedMatches.length) {
+    const published = publishedMatches[0];
+    if (publishedMatches.length > 1) {
+      messages.push(
+        `当天已有 ${publishedMatches.length} 篇文章，按每天一篇规则不会再创建新草稿。`,
+      );
+    }
+    messages.push(`当天文章已发布：${relative(published.filePath)}`);
+    if (options.open) {
+      openFile(published.filePath, options);
+    }
+    return {
+      assetsDir,
+      filePath: published.filePath,
       messages,
       status: 'published',
     };
   }
 
+  const draftPath = path.join(draftsDir, `${normalizedDate}.md`);
   await mkdir(assetsDir, { recursive: true });
 
-  if (!existsSync(draftPath)) {
-    await writeFile(draftPath, '', 'utf8');
-    messages.push(`已创建草稿：${relative(draftPath)}`);
-  } else {
-    messages.push(`草稿已存在：${relative(draftPath)}`);
-  }
+  await writeFile(draftPath, '', 'utf8');
+  messages.push(`已创建草稿：${relative(draftPath)}`);
 
   messages.push(`图片目录：${relative(assetsDir)}`);
 
@@ -229,6 +247,13 @@ export async function publishDraft(compactDate, options = {}) {
   const destinationPath = path.join(postsDir, `${normalizedDate}${path.extname(sourcePath)}`);
   if (existsSync(destinationPath)) {
     throw new BlogError(`发布文章已存在：${relative(destinationPath)}`);
+  }
+
+  const existingPosts = await findPublishedNotesByDate(toIsoDate(normalizedDate));
+  if (existingPosts.length) {
+    throw new BlogError(
+      `当天已有已发布文章：${existingPosts.map((post) => relative(post.filePath)).join(', ')}`,
+    );
   }
 
   const rawContent = await readFile(sourcePath, 'utf8');
@@ -477,6 +502,33 @@ export function findExistingDraft(compactDate) {
   if (existsSync(mdPath)) return mdPath;
   if (existsSync(mdxPath)) return mdxPath;
   return null;
+}
+
+export async function findPublishedNotesByDate(isoDate) {
+  if (!isoDate) return [];
+
+  const posts = await listMarkdownFiles(postsDir);
+  const matches = [];
+
+  for (const file of posts) {
+    const absolutePath = path.join(postsDir, file);
+    const { frontmatter } = splitFrontmatter(await readFile(absolutePath, 'utf8'));
+    const metadata = parseFrontmatter(frontmatter);
+
+    if (metadata.draft === 'true') continue;
+    if (metadata.date === isoDate) {
+      matches.push({
+        compact: path.basename(file).replace(/\.(md|mdx)$/i, ''),
+        date: metadata.date,
+        filePath: absolutePath,
+        path: relative(absolutePath),
+        status: 'post',
+        title: stripQuotes(metadata.title) || path.basename(file, path.extname(file)),
+      });
+    }
+  }
+
+  return matches.sort((a, b) => a.path.localeCompare(b.path));
 }
 
 export function relative(filePath) {

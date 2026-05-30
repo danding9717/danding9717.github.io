@@ -32,13 +32,13 @@ npm run admin:install
 之后可以在任意目录打开写作后台：
 
 ```bash
-blog-admin
+myblog
 ```
 
 后台提供几个固定动作：
 
-- `/today`：创建或打开今天的 Markdown，并用 Typora 打开。
-- `/new 20260530`：创建或打开指定日期草稿。
+- `/today`：创建或打开今天的 Markdown，并用 Typora 打开。同一天已有草稿或文章时会直接复用。
+- `/new 20260530`：创建或打开指定日期草稿。同一天只允许一篇 blog。
 - `/list`：查看草稿和已发布文章。
 - `/preview`：启动网站预览，并打开 `http://127.0.0.1:4321/`。
 - `/publish`：选择草稿发布，自动整理 frontmatter、图片并运行构建检查。
