@@ -19,17 +19,17 @@ import {
   publishDraft,
 } from './blog-core.mjs';
 
-const brandName = "Dan's Notes";
 const onlineBlogUrl = 'https://danding9717.github.io/';
 const maxLogLines = 12;
 const themeNames = ['light', 'dark', 'diablo'];
 const commands = [
+  { name: '/home', label: 'Home', help: 'Return to the dashboard' },
   { name: '/write', label: 'Write', help: 'Open today draft, or use /write YYYYMMDD' },
   { name: '/posts', label: 'Posts', help: 'Manage drafts, posts, and local trash' },
   { name: '/preview', label: 'Preview', help: 'Open the deployed blog website' },
-  { name: '/publish', label: 'Publish', help: 'Publish a draft, optional date allowed' },
+  { name: '/publish', label: 'Publish', help: 'Choose a draft to publish, optional date allowed' },
   { name: '/sync', label: 'Sync', help: 'Build, commit, and push current changes' },
-  { name: '/theme', label: 'Theme', help: 'Cycle theme, or use /theme light|dark|diablo' },
+  { name: '/theme', label: 'Theme', help: 'Choose theme, or use /theme light|dark|diablo' },
   { name: '/logs', label: 'Logs', help: 'Show recent activity' },
   { name: '/help', label: 'Help', help: 'Show command help' },
   { name: '/quit', label: 'Quit', help: 'Exit blog admin' },
@@ -41,18 +41,33 @@ const homeActions = [
   ['Preview', '/preview'],
   ['Publish', '/publish'],
 ];
-const dLogo = [
-  'DDDDDD ',
-  'D     D',
-  'D      D',
-  'D      D',
-  'D     D',
-  'DDDDDD ',
+const brandLogo = [
+  '      ▄█████████▄      ',
+  '   ▄███████████████▄   ',
+  ' ▄███████████████████▄ ',
+  '███████████████████████',
+  '                       ',
+  '          ███          ',
+  '          ███          ',
+  '          ███          ',
+  '     ▄    ███          ',
+  '     ████████          ',
+  '      ▀████▀           ',
+];
+const compactBrandLogo = [
+  '   ▄█████▄   ',
+  '▄███████████▄',
+  '      ██     ',
+  '  ▄   ██     ',
+  '  ▀████      ',
 ];
 const configPath = path.join(os.homedir(), '.config/myblog/config.json');
 const themes = {
   light: {
     bg: '\x1b[48;5;255m',
+    surfaceBg: '\x1b[48;5;254m',
+    selectedBg: '\x1b[48;5;250m',
+    selectedText: '\x1b[38;5;236m',
     border: '\x1b[38;5;250m',
     faint: '\x1b[38;5;252m',
     logo: '\x1b[38;5;252m',
@@ -61,7 +76,10 @@ const themes = {
     text: '\x1b[38;5;236m',
   },
   dark: {
-    bg: '\x1b[48;5;235m',
+    bg: '',
+    surfaceBg: '\x1b[48;5;235m',
+    selectedBg: '\x1b[48;5;240m',
+    selectedText: '\x1b[38;5;255m',
     border: '\x1b[38;5;240m',
     faint: '\x1b[38;5;239m',
     logo: '\x1b[38;5;239m',
@@ -70,7 +88,10 @@ const themes = {
     text: '\x1b[38;5;252m',
   },
   diablo: {
-    bg: '\x1b[48;5;232m',
+    bg: '',
+    surfaceBg: '\x1b[48;5;232m',
+    selectedBg: '\x1b[48;5;88m',
+    selectedText: '\x1b[38;5;230m',
     border: '\x1b[38;5;88m',
     faint: '\x1b[38;5;238m',
     logo: '\x1b[38;5;88m',
@@ -80,6 +101,7 @@ const themes = {
   },
 };
 const ansi = {
+  dim: '\x1b[2m',
   reset: '\x1b[0m',
   strong: '\x1b[1m',
 };
@@ -89,16 +111,22 @@ let logs = [];
 let input = '';
 let view = 'home';
 let selectedCommandIndex = 0;
-let publishIndex = 0;
+let commandScroll = 0;
+let optionSelector = null;
 let postsIndex = 0;
+let postsScroll = 0;
 let postsMode = 'notes';
 let pendingDeletePath = '';
 let trashItems = [];
 let lastPublishedDate = '';
 let pendingSyncMessage = '';
+let reader = null;
+const readerPositions = new Map();
 let busy = false;
 let themeName = 'light';
 let resizeTimer = null;
+let readerPrefix = '';
+let readerPrefixTimer = null;
 let terminalReady = false;
 let cursorTarget = { column: 1, row: 1 };
 
@@ -128,6 +156,21 @@ process.stdout.on('resize', scheduleResizeRender);
 
 async function handleKey(value, key) {
   if (key.name === 'escape') {
+    if (optionSelector) {
+      closeOptionSelector();
+      render();
+      return;
+    }
+
+    if (input.startsWith('/')) {
+      input = '';
+      selectedCommandIndex = 0;
+      commandScroll = 0;
+      render();
+      return;
+    }
+
+    clearReaderPrefix();
     if (view === 'sync-confirm') {
       log('Sync postponed. Run /sync when the GitHub Pages update is ready to send.');
     }
@@ -135,8 +178,14 @@ async function handleKey(value, key) {
     pendingDeletePath = '';
     pendingSyncMessage = '';
     selectedCommandIndex = 0;
-    view = 'home';
+    commandScroll = 0;
+    view = view === 'reader' ? 'posts' : 'home';
     render();
+    return;
+  }
+
+  if (optionSelector) {
+    await handleOptionSelectorKeys(value, key);
     return;
   }
 
@@ -146,19 +195,21 @@ async function handleKey(value, key) {
   }
 
   if (value === '/') {
+    clearReaderPrefix();
     input = '/';
     selectedCommandIndex = 0;
+    commandScroll = 0;
     render();
-    return;
-  }
-
-  if (view === 'publish') {
-    await handlePublishKeys(value, key);
     return;
   }
 
   if (view === 'posts') {
     await handlePostsKeys(value, key);
+    return;
+  }
+
+  if (view === 'reader') {
+    await handleReaderKeys(value, key);
     return;
   }
 
@@ -174,6 +225,10 @@ async function handleKey(value, key) {
   }
 
   if (key.name === 'return') {
+    if (view === 'home' && input.trim().toLowerCase() === 'quit') {
+      await exitAdmin();
+      return;
+    }
     if (input.trim()) {
       log('Commands start with /. Try /help.');
       input = '';
@@ -188,11 +243,62 @@ async function handleKey(value, key) {
   }
 }
 
+async function handleOptionSelectorKeys(value, key) {
+  if (!optionSelector) return;
+
+  if (key.name === 'backspace') {
+    optionSelector.query = optionSelector.query.slice(0, -1);
+    resetOptionSelectorSelection();
+    render();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'u') {
+    optionSelector.query = '';
+    resetOptionSelectorSelection();
+    render();
+    return;
+  }
+
+  const options = getOptionSelectorMatches();
+
+  if (key.name === 'up') {
+    optionSelector.selectedIndex = Math.max(0, optionSelector.selectedIndex - 1);
+    render();
+    return;
+  }
+
+  if (key.name === 'down') {
+    optionSelector.selectedIndex = Math.min(
+      Math.max(0, options.length - 1),
+      optionSelector.selectedIndex + 1,
+    );
+    render();
+    return;
+  }
+
+  if (key.name === 'return') {
+    const selected = options[optionSelector.selectedIndex];
+    if (!selected) return;
+
+    closeOptionSelector();
+    await selected.onSelect();
+    return;
+  }
+
+  if (isPrintable(value)) {
+    optionSelector.query += value;
+    resetOptionSelectorSelection();
+    render();
+  }
+}
+
 async function handleCommandInput(value, key) {
   if (key.name === 'backspace') {
     input = input.slice(0, -1);
     if (!input.startsWith('/')) input = '';
     selectedCommandIndex = 0;
+    commandScroll = 0;
     render();
     return;
   }
@@ -200,6 +306,7 @@ async function handleCommandInput(value, key) {
   if (key.ctrl && key.name === 'u') {
     input = '/';
     selectedCommandIndex = 0;
+    commandScroll = 0;
     render();
     return;
   }
@@ -226,34 +333,8 @@ async function handleCommandInput(value, key) {
   if (isPrintable(value)) {
     input += value;
     selectedCommandIndex = 0;
+    commandScroll = 0;
     render();
-  }
-}
-
-async function handlePublishKeys(value, key) {
-  const draftRows = getDraftRows();
-
-  if (value === '/') {
-    input = '/';
-    selectedCommandIndex = 0;
-    render();
-    return;
-  }
-
-  if (key.name === 'up' || key.name === 'k') {
-    publishIndex = Math.max(0, publishIndex - 1);
-    render();
-    return;
-  }
-
-  if (key.name === 'down' || key.name === 'j') {
-    publishIndex = Math.min(Math.max(0, draftRows.length - 1), publishIndex + 1);
-    render();
-    return;
-  }
-
-  if (key.name === 'return' && draftRows[publishIndex]) {
-    await publishSelectedDraft(draftRows[publishIndex]);
   }
 }
 
@@ -275,6 +356,7 @@ async function handlePostsKeys(value, key) {
       await refreshTrashItems();
     }
     postsIndex = 0;
+    postsScroll = 0;
     render();
     return;
   }
@@ -297,6 +379,11 @@ async function handlePostsKeys(value, key) {
 
   const selectedRow = visibleRows[postsIndex];
   if (key.name === 'return' && selectedRow) {
+    await openReader(selectedRow);
+    return;
+  }
+
+  if (key.name === 'e' && selectedRow) {
     openFile(selectedRow.filePath, { editor: 'Typora' });
     log(`Opened ${selectedRow.path}`);
     render();
@@ -305,6 +392,102 @@ async function handlePostsKeys(value, key) {
 
   if (key.name === 'd' && selectedRow) {
     await requestOrConfirmDelete(selectedRow);
+  }
+}
+
+async function handleReaderKeys(value, key) {
+  if (value === '/') {
+    clearReaderPrefix();
+    input = '/';
+    selectedCommandIndex = 0;
+    render();
+    return;
+  }
+
+  if (!reader) {
+    clearReaderPrefix();
+    view = 'posts';
+    render();
+    return;
+  }
+
+  const pageRows = getReaderPageRows();
+  const maxScroll = Math.max(0, reader.lines.length - pageRows);
+
+  if (readerPrefix) {
+    const prefix = readerPrefix;
+    clearReaderPrefix();
+
+    if (prefix === 'g' && key.name === 'g' && !key.shift) {
+      setReaderScroll(0, maxScroll);
+      return;
+    }
+
+    if (prefix === '1' && key.name === 'g' && key.shift) {
+      setReaderScroll(0, maxScroll);
+      return;
+    }
+  }
+
+  if (key.ctrl && key.name === 'b') {
+    setReaderScroll(reader.scroll - pageRows, maxScroll);
+    return;
+  }
+
+  if (key.ctrl && key.name === 'f') {
+    setReaderScroll(reader.scroll + pageRows, maxScroll);
+    return;
+  }
+
+  if (key.name === 'up' || key.name === 'k') {
+    setReaderScroll(reader.scroll - 1, maxScroll);
+    return;
+  }
+
+  if (key.name === 'down' || key.name === 'j') {
+    setReaderScroll(reader.scroll + 1, maxScroll);
+    return;
+  }
+
+  if (key.name === 'pageup') {
+    setReaderScroll(reader.scroll - pageRows, maxScroll);
+    return;
+  }
+
+  if (key.name === 'pagedown' || key.name === 'space' || value === ' ') {
+    setReaderScroll(reader.scroll + pageRows, maxScroll);
+    return;
+  }
+
+  if (key.shift && key.name === 'g') {
+    setReaderScroll(maxScroll, maxScroll);
+    return;
+  }
+
+  if (key.name === 'g') {
+    setReaderPrefix('g');
+    return;
+  }
+
+  if (value === '1') {
+    setReaderPrefix('1');
+    return;
+  }
+
+  if (key.name === 'e') {
+    openFile(reader.row.filePath, { editor: 'Typora' });
+    log(`Opened ${reader.row.path}`);
+    render();
+    return;
+  }
+
+  if (key.name === 'n') {
+    await openAdjacentReader(1);
+    return;
+  }
+
+  if (key.name === 'p') {
+    await openAdjacentReader(-1);
   }
 }
 
@@ -337,6 +520,7 @@ async function submitCommand() {
 
   input = '';
   selectedCommandIndex = 0;
+  commandScroll = 0;
   await executeCommand(commandLine);
 }
 
@@ -344,6 +528,10 @@ async function executeCommand(commandLine) {
   const [name = '', ...args] = commandLine.trim().split(/\s+/);
 
   switch (name.toLowerCase()) {
+    case '/home':
+      openHome();
+      return;
+
     case '/write':
       await runTask(async () => {
         const result = await createDraft(args[0] || compactDateForToday(), {
@@ -377,7 +565,11 @@ async function executeCommand(commandLine) {
       return;
 
     case '/theme':
-      await changeTheme(args[0]);
+      if (args[0]) {
+        await changeTheme(args[0]);
+      } else {
+        openThemeSelector();
+      }
       return;
 
     case '/logs':
@@ -401,26 +593,31 @@ async function executeCommand(commandLine) {
   }
 }
 
+function openHome() {
+  pendingDeletePath = '';
+  view = 'home';
+  render();
+}
+
 async function openPublishFlow() {
   await refreshRows();
   const draftRows = getDraftRows();
 
   if (!draftRows.length) {
     log('No drafts to publish.');
-    view = 'home';
     render();
     return;
   }
 
-  if (draftRows.length === 1) {
-    await publishSelectedDraft(draftRows[0]);
-    return;
-  }
-
-  publishIndex = 0;
-  view = 'publish';
-  log('Choose a draft, then press Enter.');
-  render();
+  openOptionSelector({
+    title: 'Publish draft',
+    options: draftRows.map((row) => ({
+      id: row.filePath,
+      label: `${row.compact}  ${row.title}  ${row.path}`,
+      searchText: `${row.compact} ${row.title} ${row.path}`,
+      onSelect: () => publishSelectedDraft(row),
+    })),
+  });
 }
 
 async function publishByDate(date) {
@@ -482,10 +679,67 @@ async function openPosts() {
   await refreshRows();
   await refreshTrashItems();
   postsIndex = 0;
+  postsScroll = 0;
   postsMode = 'notes';
   pendingDeletePath = '';
   view = 'posts';
   render();
+}
+
+async function openReader(row) {
+  try {
+    clearReaderPrefix();
+    const rawContent = await readFile(row.filePath, 'utf8');
+    const document = parseReaderDocument(rawContent, row);
+    reader = {
+      document,
+      layoutWidth: 0,
+      lines: [],
+      row,
+      scroll: readerPositions.get(row.filePath) ?? 0,
+    };
+    view = 'reader';
+    render();
+  } catch (error) {
+    log(`Could not read ${row.path}: ${error?.message ?? error}`);
+    view = 'posts';
+    render();
+  }
+}
+
+async function openAdjacentReader(offset) {
+  const noteRows = getVisiblePostRows();
+  const currentIndex = noteRows.findIndex((row) => row.filePath === reader?.row.filePath);
+  const nextIndex = clamp(currentIndex + offset, 0, Math.max(0, noteRows.length - 1));
+  if (nextIndex === currentIndex || !noteRows[nextIndex]) return;
+
+  postsIndex = nextIndex;
+  await openReader(noteRows[nextIndex]);
+}
+
+function setReaderScroll(nextScroll, maxScroll) {
+  reader.scroll = clamp(nextScroll, 0, maxScroll);
+  readerPositions.set(reader.row.filePath, reader.scroll);
+  render();
+}
+
+function setReaderPrefix(prefix) {
+  clearReaderPrefix();
+  readerPrefix = prefix;
+  readerPrefixTimer = setTimeout(() => {
+    readerPrefix = '';
+    readerPrefixTimer = null;
+    if (view === 'reader') render();
+  }, 1000);
+  render();
+}
+
+function clearReaderPrefix() {
+  readerPrefix = '';
+  if (readerPrefixTimer) {
+    clearTimeout(readerPrefixTimer);
+    readerPrefixTimer = null;
+  }
 }
 
 async function requestOrConfirmDelete(row) {
@@ -538,9 +792,7 @@ async function refreshTrashItems() {
 
 async function changeTheme(requestedTheme) {
   await runTask(async () => {
-    const nextTheme = requestedTheme
-      ? requestedTheme.toLowerCase()
-      : themeNames[(themeNames.indexOf(themeName) + 1) % themeNames.length];
+    const nextTheme = requestedTheme.toLowerCase();
 
     if (!Object.hasOwn(themes, nextTheme)) {
       throw new BlogError('主题必须是 light、dark 或 diablo。');
@@ -553,8 +805,57 @@ async function changeTheme(requestedTheme) {
     } catch {
       log(`Theme switched to ${themeName}, but the local preference could not be saved.`);
     }
-    view = 'home';
   });
+}
+
+function openThemeSelector() {
+  openOptionSelector({
+    title: 'Themes',
+    options: themeNames.map((name) => ({
+      active: name === themeName,
+      id: name,
+      label: name,
+      searchText: name,
+      onSelect: () => changeTheme(name),
+    })),
+    selectedId: themeName,
+  });
+}
+
+function openOptionSelector({ title, options, selectedId = '' }) {
+  input = '';
+  selectedCommandIndex = 0;
+  commandScroll = 0;
+  optionSelector = {
+    options,
+    query: '',
+    scroll: 0,
+    selectedIndex: Math.max(0, options.findIndex((option) => option.id === selectedId)),
+    title,
+  };
+  render();
+}
+
+function closeOptionSelector() {
+  optionSelector = null;
+}
+
+function resetOptionSelectorSelection() {
+  if (!optionSelector) return;
+
+  optionSelector.selectedIndex = 0;
+  optionSelector.scroll = 0;
+}
+
+function getOptionSelectorMatches() {
+  if (!optionSelector) return [];
+
+  const query = optionSelector.query.trim().toLowerCase();
+  if (!query) return optionSelector.options;
+
+  return optionSelector.options.filter((option) =>
+    option.searchText.toLowerCase().includes(query),
+  );
 }
 
 async function loadThemePreference() {
@@ -624,16 +925,38 @@ function render() {
   const width = Math.max(1, process.stdout.columns || 100);
   const height = Math.max(1, process.stdout.rows || 32);
   const lines = Array.from({ length: height }, () => Array(width).fill(' '));
-  const styles = Array.from({ length: height }, () => 'normal');
+  const styles = Array.from({ length: height }, () => Array(width).fill('normal'));
 
-  if (isTinyLayout(width, height)) {
+  if (isTinyLayout(width, height) || (view === 'reader' && height < 12)) {
     renderTiny(lines, styles, width, height);
-  } else if (input.startsWith('/')) {
-    renderCommandPalette(lines, styles, width, height);
-  } else if (view === 'publish') {
-    renderPublish(lines, styles, width, height);
-  } else if (view === 'posts') {
+  } else {
+    renderCurrentView(lines, styles, width, height);
+    renderFooter(lines, styles, width, height);
+    if (optionSelector || input.startsWith('/')) {
+      dimStyles(styles);
+      renderPaletteFooter(lines, styles, width, height);
+      if (optionSelector) {
+        renderOptionSelector(lines, styles, width, height);
+      } else {
+        renderCommandPalette(lines, styles, width, height);
+      }
+    }
+  }
+
+  const body = lines
+    .map((line, index) => paintLine(line, styles[index]))
+    .join('\r\n');
+
+  process.stdout.write(
+    `${ansi.reset}\x1b[?7l\x1b[2J\x1b[H${body}\x1b[${cursorTarget.row};${cursorTarget.column}H\x1b[?7h`,
+  );
+}
+
+function renderCurrentView(lines, styles, width, height) {
+  if (view === 'posts') {
     renderPosts(lines, styles, width, height);
+  } else if (view === 'reader') {
+    renderReader(lines, styles, width, height);
   } else if (view === 'sync-confirm') {
     renderSyncConfirm(lines, styles, width, height);
   } else if (view === 'logs') {
@@ -643,18 +966,6 @@ function render() {
   } else {
     renderHome(lines, styles, width, height);
   }
-
-  if (!isTinyLayout(width, height)) {
-    renderFooter(lines, styles, width, height);
-  }
-
-  const body = lines
-    .map((line, index) => paint(padDisplayWidth(line.join(''), width), styles[index]))
-    .join('\r\n');
-
-  process.stdout.write(
-    `${ansi.reset}\x1b[?7l\x1b[2J\x1b[H${body}\x1b[${cursorTarget.row};${cursorTarget.column}H\x1b[?7h`,
-  );
 }
 
 function renderHome(lines, styles, width, height) {
@@ -663,23 +974,31 @@ function renderHome(lines, styles, width, height) {
     return;
   }
 
-  const logoStart = clamp(Math.floor((height - 16) / 2), 2, 6);
-  centerBlock(lines, styles, dLogo, logoStart, width, 'logo');
-  centerBlock(lines, styles, [dashboardSummary()], logoStart + 8, width, 'muted');
-  centerBlock(lines, styles, homeActionRows(width), logoStart + 10, width, 'accent');
+  const logoStart = clamp(Math.floor((height - brandLogo.length - 5) / 2), 2, 6);
+  centerBlock(lines, styles, brandLogo, logoStart, width, 'logo');
+  centerBlock(lines, styles, [dashboardSummary()], logoStart + brandLogo.length + 1, width, 'muted');
+  centerBlock(lines, styles, homeActionRows(width), logoStart + brandLogo.length + 3, width, 'accent');
 }
 
 function renderCompactHome(lines, styles, width, height) {
   const content = [
-    'MyBlog',
+    ...compactBrandLogo,
     dashboardSummary(),
     '',
     ...homeActionRows(width),
   ];
-  const availableRows = Math.max(0, height - 4);
+  const availableRows = Math.max(0, height - 2);
+  const visibleRows = Math.min(content.length, availableRows);
+  const start = Math.max(1, Math.floor((availableRows - visibleRows) / 2) + 1);
 
-  for (let index = 0; index < Math.min(content.length, availableRows); index += 1) {
-    put(lines, styles, index + 2, 2, content[index], index === 0 ? 'strong' : 'normal');
+  for (let index = 0; index < visibleRows; index += 1) {
+    const style =
+      index < compactBrandLogo.length
+        ? 'logo'
+        : index === compactBrandLogo.length
+          ? 'muted'
+          : 'accent';
+    centerBlock(lines, styles, [content[index]], start + index, width, style);
   }
 }
 
@@ -731,38 +1050,162 @@ function renderCommandPalette(lines, styles, width, height) {
     0,
     Math.max(0, suggestions.length - 1),
   );
+  const panelWidth = Math.min(88, Math.max(36, width - 4));
+  const availableHeight = Math.max(6, height - 2);
+  const visibleCount = Math.max(1, Math.min(suggestions.length || 1, availableHeight - 5));
+  const panelHeight = visibleCount + 5;
+  const startRow = Math.max(1, Math.floor((height - 2 - panelHeight) / 2) + 1);
+  const startCol = Math.max(1, Math.floor((width - panelWidth) / 2) + 1);
+  const innerWidth = panelWidth - 2;
 
-  const panelRows = ['Commands', ''];
-  if (suggestions.length) {
-    for (const [index, command] of suggestions.entries()) {
-      const prefix = index === selectedCommandIndex ? '> ' : '  ';
-      panelRows.push(`${prefix}${command.name.padEnd(12, ' ')} ${command.help}`);
-    }
-  } else {
-    panelRows.push('No matching command.');
+  commandScroll = clamp(commandScroll, 0, Math.max(0, suggestions.length - visibleCount));
+  if (selectedCommandIndex < commandScroll) commandScroll = selectedCommandIndex;
+  if (selectedCommandIndex >= commandScroll + visibleCount) {
+    commandScroll = selectedCommandIndex - visibleCount + 1;
   }
-  panelRows.push('', 'Enter run  Esc home  Up/Down select');
 
-  const start = clamp(Math.floor(height * 0.32), 3, Math.max(3, height - panelRows.length - 6));
-  centerBlock(lines, styles, panelRows, start, width, 'normal', selectedCommandIndex + 2);
+  fillRect(lines, styles, startRow, startCol, panelWidth, panelHeight, 'surface:normal');
+  put(lines, styles, startRow, startCol, panelTopLine(panelWidth, 'Commands', 'esc'), 'surface:border');
+
+  const searchText = startEllipsis(input, Math.max(0, innerWidth - 3));
+  put(
+    lines,
+    styles,
+    startRow + 1,
+    startCol,
+    `│ ${padDisplayWidth(`› ${searchText}`, innerWidth - 2)} │`,
+    'surface:normal',
+  );
+  put(
+    lines,
+    styles,
+    startRow + 2,
+    startCol,
+    `├${'─'.repeat(Math.max(0, innerWidth))}┤`,
+    'surface:border',
+  );
+
+  const pageCommands = suggestions.slice(commandScroll, commandScroll + visibleCount);
+  for (let pageIndex = 0; pageIndex < visibleCount; pageIndex += 1) {
+    const row = startRow + 3 + pageIndex;
+    const commandIndex = commandScroll + pageIndex;
+    const command = pageCommands[pageIndex];
+    const selected = command && commandIndex === selectedCommandIndex;
+    const styleName = selected ? 'surface:selected' : 'surface:normal';
+    const text = command
+      ? `${selected ? '›' : ' '} ${command.name.padEnd(12, ' ')} ${command.help}`
+      : '  No matching command.';
+
+    fillRect(lines, styles, row, startCol + 1, innerWidth, 1, styleName);
+    put(lines, styles, row, startCol, '│', 'surface:border');
+    put(lines, styles, row, startCol + 1, padDisplayWidth(text, innerWidth), styleName);
+    put(lines, styles, row, startCol + panelWidth - 1, '│', 'surface:border');
+  }
+
+  put(
+    lines,
+    styles,
+    startRow + panelHeight - 2,
+    startCol,
+    `│ ${padDisplayWidth('Enter run  Esc close  ↑/↓ select', innerWidth - 2)} │`,
+    'surface:muted',
+  );
+  put(
+    lines,
+    styles,
+    startRow + panelHeight - 1,
+    startCol,
+    `└${'─'.repeat(Math.max(0, innerWidth))}┘`,
+    'surface:border',
+  );
+
+  cursorTarget = {
+    column: clamp(startCol + 3 + displayWidth(searchText), 1, width),
+    row: startRow + 1,
+  };
 }
 
-function renderPublish(lines, styles, width, height) {
-  const draftRows = getDraftRows();
-  const panelRows = ['Choose draft to publish', ''];
+function panelTopLine(width, title, rightLabel) {
+  const left = `┌ ${title} `;
+  const right = ` ${rightLabel} ┐`;
+  return `${left}${'─'.repeat(Math.max(0, width - displayWidth(left) - displayWidth(right)))}${right}`;
+}
 
-  if (draftRows.length) {
-    for (const [index, row] of draftRows.entries()) {
-      const prefix = index === publishIndex ? '> ' : '  ';
-      panelRows.push(`${prefix}${row.compact}  ${row.path}`);
-    }
-  } else {
-    panelRows.push('No drafts to publish.');
+function renderOptionSelector(lines, styles, width, height) {
+  const options = getOptionSelectorMatches();
+  optionSelector.selectedIndex = clamp(
+    optionSelector.selectedIndex,
+    0,
+    Math.max(0, options.length - 1),
+  );
+  const panelWidth = Math.min(72, Math.max(32, width - 4));
+  const availableHeight = Math.max(6, height - 4);
+  const visibleCount = Math.max(1, Math.min(options.length || 1, availableHeight - 4));
+  const panelHeight = visibleCount + 4;
+  const startRow = Math.max(1, Math.floor((height - 2 - panelHeight) / 2) + 1);
+  const startCol = Math.max(1, Math.floor((width - panelWidth) / 2) + 1);
+  const innerWidth = panelWidth - 4;
+
+  optionSelector.scroll = clamp(
+    optionSelector.scroll,
+    0,
+    Math.max(0, options.length - visibleCount),
+  );
+  if (optionSelector.selectedIndex < optionSelector.scroll) {
+    optionSelector.scroll = optionSelector.selectedIndex;
+  }
+  if (optionSelector.selectedIndex >= optionSelector.scroll + visibleCount) {
+    optionSelector.scroll = optionSelector.selectedIndex - visibleCount + 1;
   }
 
-  panelRows.push('', 'Enter publish  / command  Esc home');
-  const start = clamp(Math.floor(height * 0.28), 3, Math.max(3, height - panelRows.length - 6));
-  centerBlock(lines, styles, panelRows, start, width, 'normal', publishIndex + 2);
+  fillRect(lines, styles, startRow, startCol, panelWidth, panelHeight, 'surface:normal');
+  put(lines, styles, startRow + 1, startCol + 2, optionSelector.title, 'surface:strong');
+  put(
+    lines,
+    styles,
+    startRow + 1,
+    startCol + panelWidth - 5,
+    'esc',
+    'surface:muted',
+  );
+
+  const queryWidth = Math.max(0, innerWidth - 1);
+  const query = optionSelector.query
+    ? startEllipsis(optionSelector.query, queryWidth)
+    : 'Search';
+  put(
+    lines,
+    styles,
+    startRow + 3,
+    startCol + 2,
+    query,
+    optionSelector.query ? 'surface:normal' : 'surface:muted',
+  );
+
+  const pageOptions = options.slice(optionSelector.scroll, optionSelector.scroll + visibleCount);
+  for (let pageIndex = 0; pageIndex < visibleCount; pageIndex += 1) {
+    const row = startRow + 4 + pageIndex;
+    const optionIndex = optionSelector.scroll + pageIndex;
+    const option = pageOptions[pageIndex];
+    const selected = option && optionIndex === optionSelector.selectedIndex;
+    const styleName = selected ? 'surface:selected' : 'surface:normal';
+    const marker = option?.active ? '●' : ' ';
+    const text = option ? `${marker} ${option.label}` : '  No matching option.';
+
+    if (selected) {
+      fillRect(lines, styles, row, startCol + 1, panelWidth - 2, 1, styleName);
+    }
+    put(lines, styles, row, startCol + 2, padDisplayWidth(text, innerWidth), styleName);
+  }
+
+  cursorTarget = {
+    column: clamp(
+      startCol + 2 + (optionSelector.query ? displayWidth(query) : 0),
+      1,
+      width,
+    ),
+    row: startRow + 3,
+  };
 }
 
 function renderPosts(lines, styles, width, height) {
@@ -771,38 +1214,72 @@ function renderPosts(lines, styles, width, height) {
 
   if (postsMode === 'trash') {
     const content = ['Local trash', '', ...wrapLines(formatTrashItems(trashItems), contentWidth)];
-    for (let index = 0; index < Math.min(content.length, height - 7); index += 1) {
+    for (let index = 0; index < Math.min(content.length, height - 5); index += 1) {
       put(lines, styles, index + 3, col, content[index], index === 0 ? 'accent' : 'normal');
     }
-    put(lines, styles, height - 4, col, 't posts  / command  Esc home', 'muted');
     return;
   }
 
   const visibleRows = getVisiblePostRows();
   postsIndex = clamp(postsIndex, 0, Math.max(0, visibleRows.length - 1));
+  const visibleCount = Math.max(1, height - 7);
+  postsScroll = clamp(postsScroll, 0, Math.max(0, visibleRows.length - visibleCount));
+  if (postsIndex < postsScroll) postsScroll = postsIndex;
+  if (postsIndex >= postsScroll + visibleCount) postsScroll = postsIndex - visibleCount + 1;
+
   put(lines, styles, 3, col, 'Posts', 'accent');
-  put(lines, styles, 4, col, 'Enter open  d d trash  t local trash  / command  Esc home', 'muted');
 
   if (!visibleRows.length) {
-    put(lines, styles, 6, col, 'No drafts or posts yet.', 'normal');
+    put(lines, styles, 5, col, 'No drafts or posts yet.', 'normal');
     return;
   }
 
-  for (let index = 0; index < Math.min(visibleRows.length, height - 10); index += 1) {
-    const row = visibleRows[index];
-    const prefix = index === postsIndex ? '> ' : '  ';
+  const pageRows = visibleRows.slice(postsScroll, postsScroll + visibleCount);
+  for (let pageIndex = 0; pageIndex < pageRows.length; pageIndex += 1) {
+    const rowIndex = postsScroll + pageIndex;
+    const row = pageRows[pageIndex];
+    const prefix = rowIndex === postsIndex ? '> ' : '  ';
     put(
       lines,
       styles,
-      index + 6,
+      pageIndex + 5,
       col,
       `${prefix}${padDisplayWidth(row.status, 6)} ${padDisplayWidth(row.date, 10)} ${row.title}  ${row.path}`,
-      index === postsIndex ? 'selected' : 'normal',
+      rowIndex === postsIndex ? 'selected' : 'normal',
     );
   }
+}
 
-  if (pendingDeletePath) {
-    put(lines, styles, height - 4, col, `Press d again: ${pendingDeletePath}`, 'accent');
+function renderReader(lines, styles, width, height) {
+  const contentWidth = Math.min(96, Math.max(28, width - 8));
+  const col = Math.max(2, Math.floor((width - contentWidth) / 2));
+
+  if (!reader) {
+    put(lines, styles, 3, col, 'Could not open this post.', 'accent');
+    return;
+  }
+
+  const { metadata } = reader.document;
+  put(lines, styles, 2, col, metadata.title, 'accent');
+
+  const details = [metadata.date, metadata.category].filter(Boolean).join('  ·  ');
+  if (details) put(lines, styles, 3, col, details, 'muted');
+  if (metadata.tags.length) {
+    put(lines, styles, 4, col, metadata.tags.map((tag) => `#${tag}`).join('  '), 'muted');
+  }
+
+  put(lines, styles, 5, col, '─'.repeat(contentWidth), 'border');
+
+  ensureReaderLayout(contentWidth);
+  const pageRows = getReaderPageRows(height);
+  const maxScroll = Math.max(0, reader.lines.length - pageRows);
+  reader.scroll = clamp(reader.scroll, 0, maxScroll);
+  readerPositions.set(reader.row.filePath, reader.scroll);
+
+  const visibleLines = reader.lines.slice(reader.scroll, reader.scroll + pageRows);
+  for (let index = 0; index < visibleLines.length; index += 1) {
+    const line = visibleLines[index];
+    put(lines, styles, index + 7, col, line.text, line.style);
   }
 }
 
@@ -851,55 +1328,58 @@ function renderHelp(lines, styles, width, height) {
 }
 
 function renderFooter(lines, styles, width, height) {
-  const margin = width > 54 ? 2 : 0;
-  const boxWidth = Math.max(4, width - margin * 2);
-  const leftColumn = margin + 1;
-  const topRow = Math.max(1, height - 2);
-  const inputRow = Math.max(1, height - 1);
-  const bottomRow = Math.max(1, height);
-  const tipRow = Math.max(1, height - 3);
-  const latestLog = logs.at(-1);
-  const tip = busy
-    ? 'Working...'
-    : input.startsWith('/')
-      ? 'Enter run · Esc home · Up/Down select'
-      : latestLog
-        ? `${latestLog}  ·  Press / for commands.`
-        : 'Tip: Press / to open commands.';
-  const meta = ` ${brandName} · myblog `;
-  const maxInput = Math.max(1, boxWidth - 6);
+  const leftColumn = width > 54 ? 3 : 1;
+  const statusRow = Math.max(1, height - 1);
+  const inputRow = Math.max(1, height);
+  const maxInput = Math.max(1, width - leftColumn - 2);
   const displayInput = startEllipsis(input, maxInput);
   const inputText = `› ${displayInput}`;
 
-  put(lines, styles, tipRow, leftColumn, tip, 'muted');
-  put(
-    lines,
-    styles,
-    topRow,
-    leftColumn,
-    `┌${'─'.repeat(Math.max(0, boxWidth - 2))}┐`,
-    'border',
-  );
-  put(
-    lines,
-    styles,
-    inputRow,
-    leftColumn,
-    `│ ${padDisplayWidth(inputText, boxWidth - 4)} │`,
-    'normal',
-  );
-
-  let bottom = `└${'─'.repeat(Math.max(0, boxWidth - 2))}┘`;
-  if (displayWidth(meta) < boxWidth - 4) {
-    const insertAt = Math.max(1, boxWidth - displayWidth(meta) - 2);
-    bottom = `${bottom.slice(0, insertAt)}${meta}${bottom.slice(insertAt + displayWidth(meta))}`;
-  }
-  put(lines, styles, bottomRow, leftColumn, bottom, 'muted');
+  put(lines, styles, statusRow, leftColumn, footerStatus(width, height), 'muted');
+  put(lines, styles, inputRow, leftColumn, inputText, 'normal');
 
   cursorTarget = {
-    column: Math.min(width, leftColumn + 4 + displayWidth(displayInput)),
+    column: Math.min(width, leftColumn + 2 + displayWidth(displayInput)),
     row: clamp(inputRow, 1, height),
   };
+}
+
+function renderPaletteFooter(lines, styles, width, height) {
+  clearRow(lines, styles, height - 1);
+  clearRow(lines, styles, height);
+  put(lines, styles, height - 1, width > 54 ? 3 : 1, 'Esc close', 'muted');
+}
+
+function footerStatus(width, height) {
+  if (busy) return 'Working...';
+  if (view === 'reader') return readerFooterStatus(width, height);
+  if (view === 'posts' && pendingDeletePath) return `Press d again to trash: ${pendingDeletePath}`;
+  if (view === 'posts' && postsMode === 'trash') return 't posts  Esc home  / commands';
+  if (view === 'posts') return 'Enter read  e edit  d d trash  t trash  Esc home  / commands';
+  if (view === 'sync-confirm') return 'Enter sync  Esc later  / commands';
+  if (view === 'logs' || view === 'help') return 'Esc home  / commands';
+  return '/ commands  quit exit';
+}
+
+function readerFooterStatus(width, height) {
+  if (!reader) return 'Esc posts  / commands';
+
+  const pageRows = getReaderPageRows(height);
+  const start = reader.lines.length ? reader.scroll + 1 : 0;
+  const end = Math.min(reader.lines.length, reader.scroll + pageRows);
+  const progress = reader.lines.length ? Math.round((end / reader.lines.length) * 100) : 100;
+  const progressText = `${start}-${end}/${reader.lines.length}  ${progress}%`;
+  const prefix = readerPrefix ? `${readerPrefix}…  ` : '';
+  const controls =
+    width >= 90
+      ? 'j/k scroll  ^F/^B page  gg top  G end  n/p next  e edit  Esc posts  / commands'
+      : 'j/k  ^F/^B  gg/G  n/p  e  Esc  /';
+  const footerWidth = width - (width > 54 ? 2 : 0);
+  const controlsWidth = Math.max(
+    0,
+    footerWidth - displayWidth(prefix) - displayWidth(progressText) - 3,
+  );
+  return `${prefix}${clipDisplayWidth(controls, controlsWidth)}   ${progressText}`;
 }
 
 function getCommandSuggestions() {
@@ -955,28 +1435,97 @@ function put(lines, styles, rowNumber, columnNumber, text, styleName = 'normal')
     }
     if (cursor + width > lines[row].length) break;
 
+    for (let offset = 0; offset < width; offset += 1) {
+      clearCell(lines[row], cursor + offset);
+    }
     lines[row][cursor] = character;
+    styles[row][cursor] = styleName;
     for (let offset = 1; offset < width; offset += 1) {
       lines[row][cursor + offset] = '';
+      styles[row][cursor + offset] = styleName;
     }
     cursor += width;
   }
-  styles[row] = styleName;
 }
 
-function paint(line, styleName) {
+function fillRect(lines, styles, rowNumber, columnNumber, width, height, styleName) {
+  for (let row = rowNumber - 1; row < rowNumber - 1 + height; row += 1) {
+    if (row < 0 || row >= lines.length) continue;
+    for (let column = columnNumber - 1; column < columnNumber - 1 + width; column += 1) {
+      if (column < 0 || column >= lines[row].length) continue;
+      clearCell(lines[row], column);
+      lines[row][column] = ' ';
+      styles[row][column] = styleName;
+    }
+  }
+}
+
+function clearCell(line, column) {
+  let start = column;
+  while (start > 0 && !line[start]) start -= 1;
+
+  const width = characterWidth(line[start] || ' ');
+  if (start === column && width === 1) return;
+
+  for (let offset = 0; offset < width && start + offset < line.length; offset += 1) {
+    line[start + offset] = ' ';
+  }
+}
+
+function clearRow(lines, styles, rowNumber) {
+  fillRect(lines, styles, rowNumber, 1, lines[0]?.length ?? 0, 1, 'normal');
+}
+
+function dimStyles(styles) {
+  for (const row of styles) {
+    for (let index = 0; index < row.length; index += 1) {
+      row[index] = `dim:${row[index]}`;
+    }
+  }
+}
+
+function paintLine(line, styles) {
+  let activeStyle = '';
+  let result = '';
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (!character) continue;
+
+    const style = ansiForStyle(styles[index]);
+    if (style !== activeStyle) {
+      result += `${ansi.reset}${style}`;
+      activeStyle = style;
+    }
+    result += character;
+  }
+
+  return `${result}${ansi.reset}`;
+}
+
+function ansiForStyle(styleName) {
   const theme = themes[themeName];
-  const palette = {
-    border: `${theme.bg}${theme.border}`,
-    faint: `${theme.bg}${theme.faint}`,
-    logo: `${theme.bg}${theme.logo}`,
-    muted: `${theme.bg}${theme.muted}`,
-    normal: `${theme.bg}${theme.text}`,
-    accent: `${theme.bg}${ansi.strong}${theme.accent}`,
-    selected: `${theme.bg}${ansi.strong}${theme.accent}`,
-    strong: `${theme.bg}${ansi.strong}${theme.text}`,
+  const parts = String(styleName).split(':');
+  const tone = parts.at(-1);
+  const flags = new Set(parts.slice(0, -1));
+  const selected = tone === 'selected' || flags.has('selected');
+  const foreground = {
+    accent: theme.accent,
+    border: theme.border,
+    faint: theme.faint,
+    logo: theme.logo,
+    muted: theme.muted,
+    normal: theme.text,
+    selected: theme.selectedText,
+    strong: theme.text,
   };
-  return `${palette[styleName] ?? palette.normal}${line}${ansi.reset}`;
+  const background = selected
+    ? theme.selectedBg
+    : flags.has('surface')
+      ? theme.surfaceBg
+      : theme.bg;
+  const emphasis = tone === 'accent' || tone === 'selected' || tone === 'strong' ? ansi.strong : '';
+  return `${background}${flags.has('dim') ? ansi.dim : ''}${emphasis}${foreground[tone] ?? theme.text}`;
 }
 
 function wrapLines(text, width) {
@@ -1003,6 +1552,123 @@ function wrapLine(line, width) {
   if (chunk) chunks.push(chunk);
 
   return chunks;
+}
+
+function getReaderPageRows(height = process.stdout.rows || 32) {
+  return Math.max(1, height - 8);
+}
+
+function ensureReaderLayout(width) {
+  if (!reader || reader.layoutWidth === width) return;
+
+  reader.lines = layoutReaderDocument(reader.document, width);
+  reader.layoutWidth = width;
+}
+
+function parseReaderDocument(rawContent, row) {
+  const { frontmatter, body } = splitReaderFrontmatter(rawContent);
+  const values = {};
+
+  for (const line of frontmatter.split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z][\w-]*):\s*(.*)$/);
+    if (match) values[match[1]] = match[2];
+  }
+
+  return {
+    body,
+    metadata: {
+      category: stripReaderQuotes(values.category),
+      date: stripReaderQuotes(values.date) || row.date,
+      tags: parseReaderTags(values.tags),
+      title: stripReaderQuotes(values.title) || row.title,
+    },
+  };
+}
+
+function splitReaderFrontmatter(content) {
+  const match = String(content).match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!match) return { body: String(content), frontmatter: '' };
+
+  return {
+    body: String(content).slice(match[0].length),
+    frontmatter: match[1],
+  };
+}
+
+function parseReaderTags(value = '') {
+  const list = String(value).trim().replace(/^\[/, '').replace(/\]$/, '');
+  if (!list) return [];
+
+  return list
+    .split(',')
+    .map((tag) => stripReaderQuotes(tag.trim()))
+    .filter(Boolean);
+}
+
+function stripReaderQuotes(value = '') {
+  const text = String(value).trim();
+  if (
+    (text.startsWith('"') && text.endsWith('"')) ||
+    (text.startsWith("'") && text.endsWith("'"))
+  ) {
+    return text.slice(1, -1);
+  }
+  return text;
+}
+
+function layoutReaderDocument(document, width) {
+  const lines = [];
+  let inCodeBlock = false;
+
+  for (const rawLine of document.body.split(/\r?\n/)) {
+    const fence = rawLine.match(/^\s*(```|~~~)\s*([^`]*)$/);
+    if (fence) {
+      inCodeBlock = !inCodeBlock;
+      const language = fence[2].trim();
+      const text =
+        inCodeBlock && language
+          ? `[Code: ${language}]`
+          : inCodeBlock
+            ? '[Code]'
+            : '[End code]';
+      lines.push({ style: 'muted', text });
+      continue;
+    }
+
+    let style = inCodeBlock ? 'faint' : 'normal';
+    let text = inCodeBlock ? `  ${rawLine}` : formatReaderMarkdownLine(rawLine);
+
+    if (!inCodeBlock && /^\s*#{1,6}\s+/.test(text)) {
+      style = 'accent';
+    } else if (!inCodeBlock && /^\s*>\s?/.test(text)) {
+      style = 'muted';
+      text = text.replace(/^(\s*)>\s?/, '$1│ ');
+    } else if (!inCodeBlock && /^\s*([-*_])(?:\s*\1){2,}\s*$/.test(text)) {
+      style = 'border';
+      text = '─'.repeat(Math.min(width, 40));
+    }
+
+    for (const chunk of wrapLine(text, width)) {
+      lines.push({ style, text: chunk });
+    }
+  }
+
+  return lines.some((line) => line.text.trim())
+    ? lines
+    : [{ style: 'muted', text: 'This draft is empty.' }];
+}
+
+function formatReaderMarkdownLine(line) {
+  return String(line)
+    .replace(/!\[\[([^\]]+)\]\]/g, (_, target) => `[Image] ${target}`)
+    .replace(
+      /!\[([^\]]*)\]\(([^)]+)\)/g,
+      (_, alt, target) => `[Image: ${alt || 'image'}] ${target}`,
+    )
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, target) => `${label} (${target})`)
+    .replace(/<\/?[A-Za-z][^>]*>/g, '')
+    .replace(/(\*\*|__)(.*?)\1/g, '$2')
+    .replace(/~~(.*?)~~/g, '$1');
 }
 
 function displayWidth(value) {
@@ -1140,6 +1806,7 @@ function restoreTerminal() {
   if (!terminalReady) return;
 
   terminalReady = false;
+  clearReaderPrefix();
   if (resizeTimer) {
     clearTimeout(resizeTimer);
     resizeTimer = null;
