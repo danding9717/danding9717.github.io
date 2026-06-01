@@ -22,6 +22,7 @@ import {
 const onlineBlogUrl = 'https://danding9717.github.io/';
 const maxLogLines = 12;
 const themeNames = ['light', 'dark', 'diablo'];
+const commandSelectionHelp = '↑/↓ select  Enter run  Esc close';
 const commands = [
   { name: '/home', label: 'Home', help: 'Return to the dashboard' },
   { name: '/write', label: 'Write', help: 'Open today draft, or use /write YYYYMMDD' },
@@ -30,41 +31,39 @@ const commands = [
   { name: '/publish', label: 'Publish', help: 'Choose a draft to publish, optional date allowed' },
   { name: '/sync', label: 'Sync', help: 'Build, commit, and push current changes' },
   { name: '/theme', label: 'Theme', help: 'Choose theme, or use /theme light|dark|diablo' },
+  { name: '/settings', label: 'Settings', help: 'Choose editor, keymap, and line numbers' },
   { name: '/logs', label: 'Logs', help: 'Show recent activity' },
   { name: '/help', label: 'Help', help: 'Show command help' },
   { name: '/quit', label: 'Quit', help: 'Exit blog admin' },
 ];
 const commandNames = new Set(commands.map((command) => command.name));
-const homeActions = [
-  ['Write', '/write'],
-  ['Posts', '/posts'],
-  ['Preview', '/preview'],
-  ['Publish', '/publish'],
-];
 const brandLogo = [
-  '      ▄█████████▄      ',
-  '   ▄███████████████▄   ',
-  ' ▄███████████████████▄ ',
-  '███████████████████████',
-  '                       ',
-  '          ███          ',
-  '          ███          ',
-  '          ███          ',
-  '     ▄    ███          ',
-  '     ████████          ',
-  '      ▀████▀           ',
+  '        ▄███████▄        ',
+  '     ▄█████████████▄     ',
+  '   ▄█████████████████▄   ',
+  ' ▄█████████████████████▄ ',
+  '█████████████████████████',
+  '                         ',
+  '           ███           ',
+  '           ███           ',
+  '      ▄    ███           ',
+  '      ████████           ',
+  '       ▀████▀            ',
 ];
 const compactBrandLogo = [
-  '   ▄█████▄   ',
-  '▄███████████▄',
-  '      ██     ',
-  '  ▄   ██     ',
-  '  ▀████      ',
+  '    ▄█████▄    ',
+  '  ▄█████████▄  ',
+  '███████████████',
+  '       ██      ',
+  '   ▄   ██      ',
+  '   ██████      ',
+  '    ▀██▀       ',
 ];
 const configPath = path.join(os.homedir(), '.config/myblog/config.json');
 const themes = {
   light: {
     bg: '\x1b[48;5;255m',
+    cursorColor: '#303030',
     surfaceBg: '\x1b[48;5;254m',
     selectedBg: '\x1b[48;5;250m',
     selectedText: '\x1b[38;5;236m',
@@ -77,6 +76,7 @@ const themes = {
   },
   dark: {
     bg: '',
+    cursorColor: '#d0d0d0',
     surfaceBg: '\x1b[48;5;235m',
     selectedBg: '\x1b[48;5;240m',
     selectedText: '\x1b[38;5;255m',
@@ -89,6 +89,7 @@ const themes = {
   },
   diablo: {
     bg: '',
+    cursorColor: '#d7af00',
     surfaceBg: '\x1b[48;5;232m',
     selectedBg: '\x1b[48;5;88m',
     selectedText: '\x1b[38;5;230m',
@@ -124,11 +125,16 @@ let reader = null;
 const readerPositions = new Map();
 let busy = false;
 let themeName = 'light';
+let defaultEditor = 'builtin';
+let editorKeymap = 'simple';
+let editorLineNumbers = false;
+let editor = null;
 let resizeTimer = null;
 let readerPrefix = '';
 let readerPrefixTimer = null;
 let terminalReady = false;
 let cursorTarget = { column: 1, row: 1 };
+let homeCommandInputRect = null;
 
 if (process.argv.includes('--check')) {
   rows = await listNotes();
@@ -136,7 +142,7 @@ if (process.argv.includes('--check')) {
   process.exit(0);
 }
 
-await loadThemePreference();
+await loadPreferences();
 await refreshRows();
 setupTerminal();
 render();
@@ -144,7 +150,11 @@ render();
 readline.emitKeypressEvents(process.stdin);
 process.stdin.on('keypress', async (value, key = {}) => {
   if (key.ctrl && key.name === 'c') {
-    await exitAdmin();
+    if (view === 'editor') {
+      await requestEditorClose({ exitApplication: true });
+    } else {
+      await exitAdmin();
+    }
     return;
   }
 
@@ -162,10 +172,13 @@ async function handleKey(value, key) {
       return;
     }
 
+    if (view === 'editor') {
+      await handleEditorEscape();
+      return;
+    }
+
     if (input.startsWith('/')) {
-      input = '';
-      selectedCommandIndex = 0;
-      commandScroll = 0;
+      setCommandInput('');
       render();
       return;
     }
@@ -174,11 +187,9 @@ async function handleKey(value, key) {
     if (view === 'sync-confirm') {
       log('Sync postponed. Run /sync when the GitHub Pages update is ready to send.');
     }
-    input = '';
+    setCommandInput('');
     pendingDeletePath = '';
     pendingSyncMessage = '';
-    selectedCommandIndex = 0;
-    commandScroll = 0;
     view = view === 'reader' ? 'posts' : 'home';
     render();
     return;
@@ -189,6 +200,11 @@ async function handleKey(value, key) {
     return;
   }
 
+  if (view === 'editor') {
+    await handleEditorKeys(value, key);
+    return;
+  }
+
   if (input.startsWith('/')) {
     await handleCommandInput(value, key);
     return;
@@ -196,9 +212,7 @@ async function handleKey(value, key) {
 
   if (value === '/') {
     clearReaderPrefix();
-    input = '/';
-    selectedCommandIndex = 0;
-    commandScroll = 0;
+    setCommandInput('/');
     render();
     return;
   }
@@ -231,7 +245,7 @@ async function handleKey(value, key) {
     }
     if (input.trim()) {
       log('Commands start with /. Try /help.');
-      input = '';
+      setCommandInput('');
     }
     render();
     return;
@@ -297,16 +311,13 @@ async function handleCommandInput(value, key) {
   if (key.name === 'backspace') {
     input = input.slice(0, -1);
     if (!input.startsWith('/')) input = '';
-    selectedCommandIndex = 0;
-    commandScroll = 0;
+    resetCommandSelection();
     render();
     return;
   }
 
   if (key.ctrl && key.name === 'u') {
-    input = '/';
-    selectedCommandIndex = 0;
-    commandScroll = 0;
+    setCommandInput('/');
     render();
     return;
   }
@@ -332,8 +343,7 @@ async function handleCommandInput(value, key) {
 
   if (isPrintable(value)) {
     input += value;
-    selectedCommandIndex = 0;
-    commandScroll = 0;
+    resetCommandSelection();
     render();
   }
 }
@@ -342,9 +352,8 @@ async function handlePostsKeys(value, key) {
   const visibleRows = getVisiblePostRows();
 
   if (value === '/') {
-    input = '/';
+    setCommandInput('/');
     pendingDeletePath = '';
-    selectedCommandIndex = 0;
     render();
     return;
   }
@@ -383,12 +392,7 @@ async function handlePostsKeys(value, key) {
     return;
   }
 
-  if (key.name === 'e' && selectedRow) {
-    openFile(selectedRow.filePath, { editor: 'Typora' });
-    log(`Opened ${selectedRow.path}`);
-    render();
-    return;
-  }
+  if (await handleOpenEditorShortcut(key, selectedRow)) return;
 
   if (key.name === 'd' && selectedRow) {
     await requestOrConfirmDelete(selectedRow);
@@ -398,8 +402,7 @@ async function handlePostsKeys(value, key) {
 async function handleReaderKeys(value, key) {
   if (value === '/') {
     clearReaderPrefix();
-    input = '/';
-    selectedCommandIndex = 0;
+    setCommandInput('/');
     render();
     return;
   }
@@ -474,12 +477,7 @@ async function handleReaderKeys(value, key) {
     return;
   }
 
-  if (key.name === 'e') {
-    openFile(reader.row.filePath, { editor: 'Typora' });
-    log(`Opened ${reader.row.path}`);
-    render();
-    return;
-  }
+  if (await handleOpenEditorShortcut(key, reader.row)) return;
 
   if (key.name === 'n') {
     await openAdjacentReader(1);
@@ -491,10 +489,563 @@ async function handleReaderKeys(value, key) {
   }
 }
 
+async function handleEditorEscape() {
+  if (!editor) return;
+
+  if (editor.promptMode) {
+    editor.promptMode = '';
+    editor.commandInput = '';
+    editor.status = '';
+    render();
+    return;
+  }
+
+  if (editor.keymap === 'vim') {
+    if (editor.vimMode === 'insert') {
+      editor.vimMode = 'normal';
+    }
+    editor.vimPending = '';
+    editor.status = '';
+    render();
+    return;
+  }
+
+  await requestEditorClose();
+}
+
+async function handleEditorKeys(value, key) {
+  if (!editor) return;
+
+  if (editor.promptMode) {
+    await handleEditorPromptKeys(value, key);
+    return;
+  }
+
+  if (key.ctrl && key.name === 's') {
+    await saveEditor();
+    return;
+  }
+
+  if (editor.keymap === 'vim') {
+    await handleVimEditorKeys(value, key);
+  } else {
+    await handleSimpleEditorKeys(value, key);
+  }
+}
+
+async function handleEditorPromptKeys(value, key) {
+  if (!editor) return;
+
+  if (key.name === 'backspace') {
+    editor.commandInput = Array.from(editor.commandInput).slice(0, -1).join('');
+    render();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'u') {
+    editor.commandInput = '';
+    render();
+    return;
+  }
+
+  if (key.name === 'return') {
+    if (editor.promptMode === 'command') {
+      const command = editor.commandInput;
+      editor.promptMode = '';
+      editor.commandInput = '';
+      await executeEditorCommand(command);
+      return;
+    }
+
+    if (editor.commandInput) {
+      editor.searchQuery = editor.commandInput;
+    }
+    const direction = key.shift ? -1 : 1;
+    if (editor.searchQuery) moveToEditorSearchMatch(direction);
+    if (editor.promptMode === 'search') {
+      editor.promptMode = '';
+      editor.commandInput = '';
+    }
+    render();
+    return;
+  }
+
+  if (isPrintable(value)) {
+    editor.commandInput += value;
+    render();
+  }
+}
+
+async function handleSimpleEditorKeys(value, key) {
+  if (!editor) return;
+
+  if (key.ctrl && key.name === 'f') {
+    editor.promptMode = 'find';
+    editor.commandInput = editor.searchQuery;
+    render();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'z' && key.shift) {
+    redoEditor();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'z') {
+    undoEditor();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'y') {
+    redoEditor();
+    return;
+  }
+
+  if (handleEditorNavigationKey(key)) return;
+  if (handleEditorMutationKey(value, key)) return;
+}
+
+async function handleVimEditorKeys(value, key) {
+  if (!editor) return;
+
+  if (editor.vimMode === 'insert') {
+    if (key.ctrl && key.name === 'z') {
+      undoEditor();
+      return;
+    }
+    if (key.ctrl && key.name === 'r') {
+      redoEditor();
+      return;
+    }
+    if (handleEditorNavigationKey(key)) return;
+    handleEditorMutationKey(value, key);
+    return;
+  }
+
+  if (key.ctrl && key.name === 'r') {
+    redoEditor();
+    return;
+  }
+
+  if (handleEditorNavigationKey(key)) return;
+
+  const pending = editor.vimPending;
+  editor.vimPending = '';
+  if (pending === 'g' && value === 'g') {
+    moveEditorToLine(0);
+    return;
+  }
+  if (pending === 'd' && value === 'd') {
+    deleteEditorLine();
+    return;
+  }
+
+  if (value === 'h') {
+    moveEditorCursorHorizontal(-1);
+  } else if (value === 'j') {
+    moveEditorCursorVertical(1);
+  } else if (value === 'k') {
+    moveEditorCursorVertical(-1);
+  } else if (value === 'l') {
+    moveEditorCursorHorizontal(1);
+  } else if (value === '0') {
+    moveEditorCursorToLineBoundary('start');
+  } else if (value === '$') {
+    moveEditorCursorToLineBoundary('end');
+  } else if (value === 'w') {
+    moveEditorWord(1);
+  } else if (value === 'b') {
+    moveEditorWord(-1);
+  } else if (value === 'G') {
+    moveEditorToLine(editor.lines.length - 1);
+  } else if (value === 'g') {
+    editor.vimPending = 'g';
+    render();
+  } else if (value === 'd') {
+    editor.vimPending = 'd';
+    render();
+  } else if (value === 'i') {
+    editor.vimMode = 'insert';
+    render();
+  } else if (value === 'a') {
+    moveEditorCursorHorizontal(1, false);
+    editor.vimMode = 'insert';
+    render();
+  } else if (value === 'o') {
+    openEditorLine(1);
+  } else if (value === 'O') {
+    openEditorLine(0);
+  } else if (value === 'x') {
+    deleteEditorForward();
+  } else if (value === 'u') {
+    undoEditor();
+  } else if (value === '/') {
+    editor.promptMode = 'search';
+    editor.commandInput = '';
+    render();
+  } else if (value === ':') {
+    editor.promptMode = 'command';
+    editor.commandInput = '';
+    render();
+  } else if (value === 'n' && editor.searchQuery) {
+    moveToEditorSearchMatch(1);
+  } else if (value === 'N' && editor.searchQuery) {
+    moveToEditorSearchMatch(-1);
+  }
+}
+
+async function executeEditorCommand(command) {
+  if (!editor) return;
+
+  if (command === 'w') {
+    await saveEditor();
+  } else if (command === 'q') {
+    await requestEditorClose();
+  } else if (command === 'wq') {
+    await saveEditor({ onSaved: () => finishEditorClose() });
+  } else if (command === 'q!') {
+    await finishEditorClose();
+  } else {
+    editor.status = `Not an editor command: ${command}`;
+    render();
+  }
+}
+
+function handleEditorNavigationKey(key) {
+  if (!editor) return false;
+
+  if (key.name === 'left') {
+    moveEditorCursorHorizontal(-1);
+  } else if (key.name === 'right') {
+    moveEditorCursorHorizontal(1);
+  } else if (key.name === 'up') {
+    moveEditorCursorVertical(-1);
+  } else if (key.name === 'down') {
+    moveEditorCursorVertical(1);
+  } else if (key.name === 'home') {
+    moveEditorCursorToLineBoundary('start');
+  } else if (key.name === 'end') {
+    moveEditorCursorToLineBoundary('end');
+  } else if (key.name === 'pageup') {
+    moveEditorCursorVertical(-getEditorPageRows());
+  } else if (key.name === 'pagedown') {
+    moveEditorCursorVertical(getEditorPageRows());
+  } else {
+    return false;
+  }
+
+  return true;
+}
+
+function handleEditorMutationKey(value, key) {
+  if (!editor) return false;
+
+  if (key.name === 'return') {
+    splitEditorLine();
+  } else if (key.name === 'backspace') {
+    deleteEditorBackward();
+  } else if (key.name === 'delete') {
+    deleteEditorForward();
+  } else if (key.name === 'tab') {
+    insertEditorText('  ');
+  } else if (
+    typeof value === 'string' &&
+    value &&
+    !key.ctrl &&
+    !key.meta &&
+    (isPrintable(value) || /[\r\n]/.test(value))
+  ) {
+    insertEditorText(value);
+  } else {
+    return false;
+  }
+
+  return true;
+}
+
+function recordEditorHistory() {
+  if (!editor) return;
+
+  editor.history.push({
+    cursor: { ...editor.cursor },
+    lines: [...editor.lines],
+  });
+  editor.history = editor.history.slice(-200);
+  editor.redo = [];
+}
+
+function undoEditor() {
+  if (!editor || !editor.history.length) return;
+
+  editor.redo.push({
+    cursor: { ...editor.cursor },
+    lines: [...editor.lines],
+  });
+  const snapshot = editor.history.pop();
+  editor.lines = snapshot.lines;
+  editor.cursor = snapshot.cursor;
+  editor.status = 'Undo.';
+  render();
+}
+
+function redoEditor() {
+  if (!editor || !editor.redo.length) return;
+
+  editor.history.push({
+    cursor: { ...editor.cursor },
+    lines: [...editor.lines],
+  });
+  const snapshot = editor.redo.pop();
+  editor.lines = snapshot.lines;
+  editor.cursor = snapshot.cursor;
+  editor.status = 'Redo.';
+  render();
+}
+
+function insertEditorText(value) {
+  if (!editor) return;
+
+  recordEditorHistory();
+  const line = editor.lines[editor.cursor.line] ?? '';
+  const characters = Array.from(line);
+  const before = characters.slice(0, editor.cursor.column).join('');
+  const after = characters.slice(editor.cursor.column).join('');
+  const insertedLines = String(value).replace(/\r\n?/g, '\n').split('\n');
+
+  if (insertedLines.length === 1) {
+    editor.lines[editor.cursor.line] = `${before}${insertedLines[0]}${after}`;
+    editor.cursor.column += Array.from(insertedLines[0]).length;
+  } else {
+    const replacement = [
+      `${before}${insertedLines[0]}`,
+      ...insertedLines.slice(1, -1),
+      `${insertedLines.at(-1)}${after}`,
+    ];
+    editor.lines.splice(editor.cursor.line, 1, ...replacement);
+    editor.cursor.line += replacement.length - 1;
+    editor.cursor.column = Array.from(insertedLines.at(-1)).length;
+  }
+
+  editor.status = '';
+  render();
+}
+
+function splitEditorLine() {
+  if (!editor) return;
+
+  recordEditorHistory();
+  const characters = Array.from(editor.lines[editor.cursor.line] ?? '');
+  const before = characters.slice(0, editor.cursor.column).join('');
+  const after = characters.slice(editor.cursor.column).join('');
+  editor.lines.splice(editor.cursor.line, 1, before, after);
+  editor.cursor.line += 1;
+  editor.cursor.column = 0;
+  editor.status = '';
+  render();
+}
+
+function deleteEditorBackward() {
+  if (!editor) return;
+
+  if (editor.cursor.column > 0) {
+    recordEditorHistory();
+    const characters = Array.from(editor.lines[editor.cursor.line] ?? '');
+    characters.splice(editor.cursor.column - 1, 1);
+    editor.lines[editor.cursor.line] = characters.join('');
+    editor.cursor.column -= 1;
+  } else if (editor.cursor.line > 0) {
+    recordEditorHistory();
+    const previous = editor.lines[editor.cursor.line - 1];
+    const current = editor.lines[editor.cursor.line];
+    editor.cursor.line -= 1;
+    editor.cursor.column = Array.from(previous).length;
+    editor.lines.splice(editor.cursor.line, 2, `${previous}${current}`);
+  } else {
+    return;
+  }
+
+  editor.status = '';
+  render();
+}
+
+function deleteEditorForward() {
+  if (!editor) return;
+
+  const characters = Array.from(editor.lines[editor.cursor.line] ?? '');
+  if (editor.cursor.column < characters.length) {
+    recordEditorHistory();
+    characters.splice(editor.cursor.column, 1);
+    editor.lines[editor.cursor.line] = characters.join('');
+  } else if (editor.cursor.line < editor.lines.length - 1) {
+    recordEditorHistory();
+    editor.lines.splice(
+      editor.cursor.line,
+      2,
+      `${editor.lines[editor.cursor.line]}${editor.lines[editor.cursor.line + 1]}`,
+    );
+  } else {
+    return;
+  }
+
+  editor.status = '';
+  render();
+}
+
+function deleteEditorLine() {
+  if (!editor) return;
+
+  recordEditorHistory();
+  if (editor.lines.length === 1) {
+    editor.lines[0] = '';
+  } else {
+    editor.lines.splice(editor.cursor.line, 1);
+    editor.cursor.line = Math.min(editor.cursor.line, editor.lines.length - 1);
+  }
+  editor.cursor.column = Math.min(
+    editor.cursor.column,
+    Array.from(editor.lines[editor.cursor.line] ?? '').length,
+  );
+  editor.status = '';
+  render();
+}
+
+function openEditorLine(offset) {
+  if (!editor) return;
+
+  recordEditorHistory();
+  const target = editor.cursor.line + offset;
+  editor.lines.splice(target, 0, '');
+  editor.cursor = { column: 0, line: target };
+  editor.vimMode = 'insert';
+  editor.status = '';
+  render();
+}
+
+function moveEditorCursorHorizontal(offset, wrap = true) {
+  if (!editor) return;
+
+  const characters = Array.from(editor.lines[editor.cursor.line] ?? '');
+  if (offset < 0 && editor.cursor.column > 0) {
+    editor.cursor.column -= 1;
+  } else if (offset > 0 && editor.cursor.column < characters.length) {
+    editor.cursor.column += 1;
+  } else if (wrap && offset < 0 && editor.cursor.line > 0) {
+    editor.cursor.line -= 1;
+    editor.cursor.column = Array.from(editor.lines[editor.cursor.line] ?? '').length;
+  } else if (wrap && offset > 0 && editor.cursor.line < editor.lines.length - 1) {
+    editor.cursor.line += 1;
+    editor.cursor.column = 0;
+  }
+  render();
+}
+
+function moveEditorCursorVertical(offset) {
+  if (!editor) return;
+
+  const contentWidth = Math.max(1, (process.stdout.columns || 100) - 2);
+  const layout = layoutEditorBuffer(contentWidth);
+  const currentIndex = findEditorCursorVisualIndex(layout);
+  const currentLine = layout[currentIndex];
+  const targetLine = layout[clamp(currentIndex + offset, 0, layout.length - 1)];
+  const visualColumn = displayWidth(
+    Array.from(editor.lines[editor.cursor.line] ?? '')
+      .slice(currentLine.start, editor.cursor.column)
+      .join(''),
+  );
+  editor.cursor.line = targetLine.lineIndex;
+  editor.cursor.column =
+    targetLine.start + characterIndexForDisplayWidth(targetLine.text, visualColumn);
+  render();
+}
+
+function moveEditorCursorToLineBoundary(boundary) {
+  if (!editor) return;
+
+  editor.cursor.column =
+    boundary === 'end' ? Array.from(editor.lines[editor.cursor.line] ?? '').length : 0;
+  render();
+}
+
+function moveEditorToLine(line) {
+  if (!editor) return;
+
+  editor.cursor.line = clamp(line, 0, editor.lines.length - 1);
+  editor.cursor.column = Math.min(
+    editor.cursor.column,
+    Array.from(editor.lines[editor.cursor.line] ?? '').length,
+  );
+  render();
+}
+
+function moveEditorWord(direction) {
+  if (!editor) return;
+
+  const text = editor.lines[editor.cursor.line] ?? '';
+  const characters = Array.from(text);
+  let column = editor.cursor.column;
+  if (direction > 0) {
+    while (column < characters.length && /\w/.test(characters[column])) column += 1;
+    while (column < characters.length && !/\w/.test(characters[column])) column += 1;
+  } else {
+    column = Math.max(0, column - 1);
+    while (column > 0 && !/\w/.test(characters[column])) column -= 1;
+    while (column > 0 && /\w/.test(characters[column - 1])) column -= 1;
+  }
+  editor.cursor.column = column;
+  render();
+}
+
+function moveToEditorSearchMatch(direction) {
+  if (!editor || !editor.searchQuery) return;
+
+  const query = editor.searchQuery.toLowerCase();
+  const lines = editor.lines.map((line) => line.toLowerCase());
+  const startLine = editor.cursor.line;
+  for (let step = 0; step < lines.length; step += 1) {
+    const lineIndex = (startLine + direction * step + lines.length) % lines.length;
+    const source = lines[lineIndex];
+    const startColumn =
+      step === 0
+        ? direction > 0
+          ? editor.cursor.column + 1
+          : Math.max(0, editor.cursor.column - 1)
+        : direction > 0
+          ? 0
+          : source.length;
+    const index =
+      direction > 0
+        ? source.indexOf(query, startColumn)
+        : source.lastIndexOf(query, startColumn);
+    if (index >= 0) {
+      editor.cursor = {
+        column: Array.from(source.slice(0, index)).length,
+        line: lineIndex,
+      };
+      editor.status = `Found: ${editor.searchQuery}`;
+      render();
+      return;
+    }
+  }
+
+  editor.status = `Not found: ${editor.searchQuery}`;
+  render();
+}
+
+function characterIndexForDisplayWidth(value, targetWidth) {
+  let index = 0;
+  let width = 0;
+  for (const character of String(value)) {
+    const characterDisplayWidth = characterWidth(character);
+    if (width + characterDisplayWidth > targetWidth) break;
+    width += characterDisplayWidth;
+    index += 1;
+  }
+  return index;
+}
+
 async function handleSyncConfirmKeys(value, key) {
   if (value === '/') {
-    input = '/';
-    selectedCommandIndex = 0;
+    setCommandInput('/');
     render();
     return;
   }
@@ -518,9 +1069,7 @@ async function submitCommand() {
     commandLine = suggestions[selectedCommandIndex]?.name ?? trimmed;
   }
 
-  input = '';
-  selectedCommandIndex = 0;
-  commandScroll = 0;
+  setCommandInput('');
   await executeCommand(commandLine);
 }
 
@@ -535,12 +1084,15 @@ async function executeCommand(commandLine) {
     case '/write':
       await runTask(async () => {
         const result = await createDraft(args[0] || compactDateForToday(), {
-          editor: 'Typora',
-          open: true,
+          open: false,
         });
         logMany(result.messages);
         await refreshRows();
+        const row =
+          rows.find((item) => item.filePath === result.filePath) ??
+          createEditorRow(result.filePath);
         view = 'home';
+        await openConfiguredEditor(row);
       });
       return;
 
@@ -569,6 +1121,14 @@ async function executeCommand(commandLine) {
         await changeTheme(args[0]);
       } else {
         openThemeSelector();
+      }
+      return;
+
+    case '/settings':
+      if (args.length) {
+        await changeSetting(args[0], args[1]);
+      } else {
+        openSettingsSelector();
       }
       return;
 
@@ -615,37 +1175,27 @@ async function openPublishFlow() {
       id: row.filePath,
       label: `${row.compact}  ${row.title}  ${row.path}`,
       searchText: `${row.compact} ${row.title} ${row.path}`,
-      onSelect: () => publishSelectedDraft(row),
+      onSelect: () => publishDraftAndConfirm(row.compact, row.title),
     })),
   });
 }
 
-async function publishByDate(date) {
+async function publishDraftAndConfirm(compactDate, label = compactDate) {
   await runTask(async () => {
-    log(`Publishing ${date}...`);
-    const result = await publishDraft(date, { stdio: 'pipe' });
-    lastPublishedDate = result.compactDate || date;
+    log(`Publishing ${label}...`);
+    const result = await publishDraft(compactDate, { stdio: 'pipe' });
+    lastPublishedDate = result.compactDate || compactDate;
     logMany(result.messages);
     if (result.buildOutput) {
       log(buildSummary(result.buildOutput));
     }
     await refreshRows();
-    openSyncConfirmation(result.compactDate || date);
+    openSyncConfirmation(result.compactDate || compactDate);
   });
 }
 
-async function publishSelectedDraft(row) {
-  await runTask(async () => {
-    log(`Publishing ${row.title}...`);
-    const result = await publishDraft(row.compact, { stdio: 'pipe' });
-    lastPublishedDate = result.compactDate || row.compact;
-    logMany(result.messages);
-    if (result.buildOutput) {
-      log(buildSummary(result.buildOutput));
-    }
-    await refreshRows();
-    openSyncConfirmation(result.compactDate || row.compact);
-  });
+async function publishByDate(date) {
+  await publishDraftAndConfirm(date);
 }
 
 function openSyncConfirmation(compactDate) {
@@ -705,6 +1255,224 @@ async function openReader(row) {
     view = 'posts';
     render();
   }
+}
+
+function createEditorRow(filePath) {
+  return {
+    date: '-',
+    filePath,
+    path: path.relative(projectRoot, filePath),
+    status: 'draft',
+    title: path.basename(filePath, path.extname(filePath)),
+  };
+}
+
+async function openConfiguredEditor(row, requestedEditor = defaultEditor) {
+  if (requestedEditor === 'typora') {
+    openFile(row.filePath, { editor: 'Typora' });
+    log(`Opened ${row.path} in Typora.`);
+    render();
+    return;
+  }
+
+  await openBuiltinEditor(row);
+}
+
+async function handleOpenEditorShortcut(key, row) {
+  if (!row) return false;
+
+  const requestedEditor = {
+    e: defaultEditor,
+    i: 'builtin',
+    o: 'typora',
+  }[key.name];
+  if (!requestedEditor) return false;
+
+  await openConfiguredEditor(row, requestedEditor);
+  return true;
+}
+
+async function openBuiltinEditor(row) {
+  try {
+    const rawContent = await readFile(row.filePath, 'utf8');
+    const newline = rawContent.includes('\r\n') ? '\r\n' : '\n';
+    editor = {
+      commandInput: '',
+      cursor: { column: 0, line: 0 },
+      filePath: row.filePath,
+      history: [],
+      keymap: editorKeymap,
+      lines: rawContent.replace(/\r\n/g, '\n').split('\n'),
+      newline,
+      originalContent: rawContent,
+      promptMode: '',
+      redo: [],
+      returnView: view,
+      row,
+      scroll: 0,
+      searchQuery: '',
+      status: '',
+      vimMode: editorKeymap === 'vim' ? 'normal' : 'insert',
+      vimPending: '',
+    };
+    view = 'editor';
+    render();
+  } catch (error) {
+    log(`Could not edit ${row.path}: ${error?.message ?? error}`);
+    render();
+  }
+}
+
+function editorContent() {
+  return editor ? editor.lines.join(editor.newline) : '';
+}
+
+function isEditorDirty() {
+  return Boolean(editor && editorContent() !== editor.originalContent);
+}
+
+async function requestEditorClose({ exitApplication = false } = {}) {
+  if (!editor) {
+    if (exitApplication) await exitAdmin();
+    return;
+  }
+
+  if (!isEditorDirty()) {
+    await finishEditorClose({ exitApplication });
+    return;
+  }
+
+  openOptionSelector({
+    title: 'Unsaved changes',
+    options: [
+      {
+        id: 'save',
+        label: 'Save',
+        searchText: 'save',
+        onSelect: () =>
+          saveEditor({
+            onSaved: () => finishEditorClose({ exitApplication }),
+          }),
+      },
+      {
+        id: 'discard',
+        label: 'Discard',
+        searchText: 'discard',
+        onSelect: () => finishEditorClose({ exitApplication }),
+      },
+      {
+        id: 'cancel',
+        label: 'Cancel',
+        searchText: 'cancel',
+        onSelect: () => render(),
+      },
+    ],
+  });
+}
+
+async function finishEditorClose({ exitApplication = false } = {}) {
+  const closingEditor = editor;
+  if (!closingEditor) return;
+
+  editor = null;
+  await refreshRows();
+  if (exitApplication) {
+    await exitAdmin();
+    return;
+  }
+
+  if (closingEditor.returnView === 'reader') {
+    const row =
+      rows.find((item) => item.filePath === closingEditor.filePath) ??
+      closingEditor.row;
+    await openReader(row);
+    return;
+  }
+
+  view = closingEditor.returnView === 'posts' ? 'posts' : 'home';
+  render();
+}
+
+async function saveEditor({ force = false, onSaved = null } = {}) {
+  if (!editor) return false;
+
+  try {
+    const diskContent = await readFile(editor.filePath, 'utf8');
+    if (!force && diskContent !== editor.originalContent) {
+      openOptionSelector({
+        title: 'File changed on disk',
+        options: [
+          {
+            id: 'overwrite',
+            label: 'Overwrite',
+            searchText: 'overwrite',
+            onSelect: () => saveEditor({ force: true, onSaved }),
+          },
+          {
+            id: 'reload',
+            label: 'Reload',
+            searchText: 'reload',
+            onSelect: () => reloadEditorFromDisk(),
+          },
+          {
+            id: 'cancel',
+            label: 'Cancel',
+            searchText: 'cancel',
+            onSelect: () => render(),
+          },
+        ],
+      });
+      return false;
+    }
+
+    const content = editorContent();
+    await writeFile(editor.filePath, content, 'utf8');
+    editor.originalContent = content;
+    editor.status = 'Saved.';
+    await refreshRows();
+    const refreshedRow = rows.find((row) => row.filePath === editor.filePath);
+    if (refreshedRow) editor.row = refreshedRow;
+    refreshReaderAfterEditorSave(content, editor.row);
+    if (onSaved) {
+      await onSaved();
+    } else {
+      render();
+    }
+    return true;
+  } catch (error) {
+    editor.status = `Save failed: ${error?.message ?? error}`;
+    render();
+    return false;
+  }
+}
+
+async function reloadEditorFromDisk() {
+  if (!editor) return;
+
+  try {
+    const rawContent = await readFile(editor.filePath, 'utf8');
+    editor.lines = rawContent.replace(/\r\n/g, '\n').split('\n');
+    editor.newline = rawContent.includes('\r\n') ? '\r\n' : '\n';
+    editor.originalContent = rawContent;
+    editor.cursor = { column: 0, line: 0 };
+    editor.history = [];
+    editor.redo = [];
+    editor.scroll = 0;
+    editor.status = 'Reloaded from disk.';
+    render();
+  } catch (error) {
+    editor.status = `Reload failed: ${error?.message ?? error}`;
+    render();
+  }
+}
+
+function refreshReaderAfterEditorSave(content, row) {
+  if (!reader || reader.row.filePath !== row.filePath) return;
+
+  reader.row = row;
+  reader.document = parseReaderDocument(content, row);
+  reader.layoutWidth = 0;
+  reader.lines = [];
 }
 
 async function openAdjacentReader(offset) {
@@ -799,8 +1567,11 @@ async function changeTheme(requestedTheme) {
     }
 
     themeName = nextTheme;
+    if (terminalReady) {
+      process.stdout.write(cursorColorSequence());
+    }
     try {
-      await saveThemePreference();
+      await savePreferences();
       log(`Theme switched to ${themeName}.`);
     } catch {
       log(`Theme switched to ${themeName}, but the local preference could not be saved.`);
@@ -822,10 +1593,88 @@ function openThemeSelector() {
   });
 }
 
+function openSettingsSelector() {
+  openOptionSelector({
+    title: 'Settings',
+    options: [
+      {
+        id: 'editor',
+        label: `Default editor  ${defaultEditor}`,
+        searchText: `default editor ${defaultEditor}`,
+        onSelect: () => openSettingValueSelector('editor'),
+      },
+      {
+        id: 'keymap',
+        label: `Editor keymap   ${editorKeymap}`,
+        searchText: `editor keymap ${editorKeymap}`,
+        onSelect: () => openSettingValueSelector('keymap'),
+      },
+      {
+        id: 'line-numbers',
+        label: `Line numbers    ${editorLineNumbers ? 'on' : 'off'}`,
+        searchText: `line numbers ${editorLineNumbers ? 'on' : 'off'}`,
+        onSelect: () => openSettingValueSelector('line-numbers'),
+      },
+    ],
+  });
+}
+
+function openSettingValueSelector(setting) {
+  const definitions = {
+    editor: {
+      selected: defaultEditor,
+      title: 'Default editor',
+      values: ['builtin', 'typora'],
+    },
+    keymap: {
+      selected: editorKeymap,
+      title: 'Editor keymap',
+      values: ['simple', 'vim'],
+    },
+    'line-numbers': {
+      selected: editorLineNumbers ? 'on' : 'off',
+      title: 'Line numbers',
+      values: ['off', 'on'],
+    },
+  };
+  const definition = definitions[setting];
+  if (!definition) return;
+
+  openOptionSelector({
+    title: definition.title,
+    options: definition.values.map((value) => ({
+      active: value === definition.selected,
+      id: value,
+      label: value,
+      searchText: value,
+      onSelect: () => changeSetting(setting, value),
+    })),
+    selectedId: definition.selected,
+  });
+}
+
+async function changeSetting(setting, requestedValue) {
+  await runTask(async () => {
+    const value = String(requestedValue ?? '').toLowerCase();
+    if (setting === 'editor' && ['builtin', 'typora'].includes(value)) {
+      defaultEditor = value;
+    } else if (setting === 'keymap' && ['simple', 'vim'].includes(value)) {
+      editorKeymap = value;
+    } else if (setting === 'line-numbers' && ['on', 'off'].includes(value)) {
+      editorLineNumbers = value === 'on';
+    } else {
+      throw new BlogError(
+        '设置格式：/settings editor builtin|typora、/settings keymap simple|vim、/settings line-numbers on|off',
+      );
+    }
+
+    await savePreferences();
+    log(`Setting ${setting} changed to ${value}.`);
+  });
+}
+
 function openOptionSelector({ title, options, selectedId = '' }) {
-  input = '';
-  selectedCommandIndex = 0;
-  commandScroll = 0;
+  setCommandInput('');
   optionSelector = {
     options,
     query: '',
@@ -858,23 +1707,48 @@ function getOptionSelectorMatches() {
   );
 }
 
-async function loadThemePreference() {
+async function loadPreferences() {
   try {
     const config = JSON.parse(await readFile(configPath, 'utf8'));
     if (Object.hasOwn(themes, config.theme)) {
       themeName = config.theme;
     }
+    if (['builtin', 'typora'].includes(config.defaultEditor)) {
+      defaultEditor = config.defaultEditor;
+    }
+    if (['simple', 'vim'].includes(config.editorKeymap)) {
+      editorKeymap = config.editorKeymap;
+    }
+    if (typeof config.editorLineNumbers === 'boolean') {
+      editorLineNumbers = config.editorLineNumbers;
+    }
   } catch (error) {
     if (error?.code !== 'ENOENT') {
-      log('Theme config could not be read. Using light.');
+      log('Settings could not be read. Using defaults.');
     }
     themeName = 'light';
+    defaultEditor = 'builtin';
+    editorKeymap = 'simple';
+    editorLineNumbers = false;
   }
 }
 
-async function saveThemePreference() {
+async function savePreferences() {
   await mkdir(path.dirname(configPath), { recursive: true });
-  await writeFile(configPath, `${JSON.stringify({ theme: themeName }, null, 2)}\n`, 'utf8');
+  await writeFile(
+    configPath,
+    `${JSON.stringify(
+      {
+        theme: themeName,
+        defaultEditor,
+        editorKeymap,
+        editorLineNumbers,
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
 }
 
 async function runTask(task) {
@@ -905,7 +1779,7 @@ function setupTerminal() {
   process.stdin.setRawMode(true);
   process.stdin.resume();
   terminalReady = true;
-  process.stdout.write('\x1b[?1049h\x1b[?7h\x1b[?25h');
+  process.stdout.write(`\x1b[?1049h\x1b[?7h\x1b[?25h${cursorColorSequence()}`);
   process.once('exit', restoreTerminal);
   process.once('SIGTERM', () => void exitAdmin());
   process.once('SIGHUP', () => void exitAdmin());
@@ -926,17 +1800,36 @@ function render() {
   const height = Math.max(1, process.stdout.rows || 32);
   const lines = Array.from({ length: height }, () => Array(width).fill(' '));
   const styles = Array.from({ length: height }, () => Array(width).fill('normal'));
+  homeCommandInputRect = null;
 
-  if (isTinyLayout(width, height) || (view === 'reader' && height < 12)) {
-    renderTiny(lines, styles, width, height);
+  if (
+    isTinyLayout(width, height) ||
+    (view === 'home' && height < 11) ||
+    (view === 'reader' && height < 12)
+  ) {
+    if (view === 'editor') {
+      renderEditorTiny(lines, styles, width, height);
+    } else {
+      renderTiny(lines, styles, width, height);
+    }
   } else {
     renderCurrentView(lines, styles, width, height);
-    renderFooter(lines, styles, width, height);
+    if (view !== 'home' && view !== 'editor') {
+      renderFooter(lines, styles, width, height);
+    }
     if (optionSelector || input.startsWith('/')) {
-      dimStyles(styles);
-      renderPaletteFooter(lines, styles, width, height);
+      const renderHomeSuggestions =
+        view === 'home' && !optionSelector && input.startsWith('/');
+      if (!renderHomeSuggestions) {
+        dimStyles(styles);
+      }
+      if (view !== 'home' && view !== 'editor') {
+        renderPaletteFooter(lines, styles, width, height);
+      }
       if (optionSelector) {
         renderOptionSelector(lines, styles, width, height);
+      } else if (renderHomeSuggestions) {
+        renderHomeCommandSuggestions(lines, styles, height);
       } else {
         renderCommandPalette(lines, styles, width, height);
       }
@@ -957,6 +1850,8 @@ function renderCurrentView(lines, styles, width, height) {
     renderPosts(lines, styles, width, height);
   } else if (view === 'reader') {
     renderReader(lines, styles, width, height);
+  } else if (view === 'editor') {
+    renderEditor(lines, styles, width, height);
   } else if (view === 'sync-confirm') {
     renderSyncConfirm(lines, styles, width, height);
   } else if (view === 'logs') {
@@ -974,32 +1869,72 @@ function renderHome(lines, styles, width, height) {
     return;
   }
 
-  const logoStart = clamp(Math.floor((height - brandLogo.length - 5) / 2), 2, 6);
-  centerBlock(lines, styles, brandLogo, logoStart, width, 'logo');
-  centerBlock(lines, styles, [dashboardSummary()], logoStart + brandLogo.length + 1, width, 'muted');
-  centerBlock(lines, styles, homeActionRows(width), logoStart + brandLogo.length + 3, width, 'accent');
+  renderHomeContent(lines, styles, width, height, brandLogo);
 }
 
 function renderCompactHome(lines, styles, width, height) {
-  const content = [
-    ...compactBrandLogo,
-    dashboardSummary(),
-    '',
-    ...homeActionRows(width),
-  ];
-  const availableRows = Math.max(0, height - 2);
-  const visibleRows = Math.min(content.length, availableRows);
-  const start = Math.max(1, Math.floor((availableRows - visibleRows) / 2) + 1);
+  renderHomeContent(lines, styles, width, height, compactBrandLogo);
+}
 
-  for (let index = 0; index < visibleRows; index += 1) {
-    const style =
-      index < compactBrandLogo.length
-        ? 'logo'
-        : index === compactBrandLogo.length
-          ? 'muted'
-          : 'accent';
-    centerBlock(lines, styles, [content[index]], start + index, width, style);
+function renderHomeContent(lines, styles, width, height, logo) {
+  const fieldWidth = Math.min(64, Math.max(24, width - 4));
+  const displayInput = startEllipsis(input, Math.max(1, fieldWidth - 5));
+  let logoRows = logo.map((text) => ({ style: 'logo', text }));
+  let wordmarkRows = [{ style: 'muted', text: 'myblog' }];
+  const summaryRows = [{ style: 'muted', text: dashboardSummary() }];
+  const inputRows = [
+    { style: 'surface:border', text: `┌${'─'.repeat(fieldWidth - 2)}┐` },
+    { input: true },
+    { style: 'surface:border', text: `└${'─'.repeat(fieldWidth - 2)}┘` },
+  ];
+  const contentHeight = () =>
+    logoRows.length + wordmarkRows.length + summaryRows.length + inputRows.length;
+
+  if (contentHeight() > height) {
+    wordmarkRows = [];
   }
+  if (contentHeight() > height) {
+    logoRows = logoRows.slice(0, Math.max(0, height - summaryRows.length - inputRows.length));
+  }
+
+  const groups = [logoRows, wordmarkRows, summaryRows, inputRows].filter((group) => group.length);
+  let spacerBudget = Math.max(0, height - contentHeight());
+  const visibleContent = groups.flatMap((group, index) => {
+    if (index === groups.length - 1 || spacerBudget === 0) {
+      return group;
+    }
+    spacerBudget -= 1;
+    return [...group, { style: 'normal', text: '' }];
+  });
+  const start = Math.max(1, Math.floor((height - visibleContent.length) / 2) + 1);
+
+  for (const [index, row] of visibleContent.entries()) {
+    const currentRow = start + index;
+    if (!row.input) {
+      centerBlock(lines, styles, [row.text], currentRow, width, row.style);
+      continue;
+    }
+
+    const fieldColumn = Math.max(1, Math.floor((width - fieldWidth) / 2));
+    fillRect(lines, styles, currentRow, fieldColumn, fieldWidth, 1, 'surface:normal');
+    put(lines, styles, currentRow, fieldColumn, '│', 'surface:border');
+    put(lines, styles, currentRow, fieldColumn + 2, '› ', 'surface:muted');
+    put(
+      lines,
+      styles,
+      currentRow,
+      fieldColumn + 4,
+      displayInput || '/',
+      displayInput ? 'surface:normal' : 'surface:muted',
+    );
+    put(lines, styles, currentRow, fieldColumn + fieldWidth - 1, '│', 'surface:border');
+    homeCommandInputRect = { column: fieldColumn, row: currentRow, width: fieldWidth };
+  }
+
+  cursorTarget = {
+    column: clamp((homeCommandInputRect?.column ?? 1) + 4 + displayWidth(displayInput), 1, width),
+    row: clamp(homeCommandInputRect?.row ?? height, 1, height),
+  };
 }
 
 function renderTiny(lines, styles, width, height) {
@@ -1023,24 +1958,85 @@ function dashboardSummary() {
   return `Posts ${posts}   Drafts ${drafts}   Theme ${themeName}`;
 }
 
-function homeActionRows(width) {
-  if (width >= 64) {
-    return [
-      '/write     New or open draft    /posts     Manage content',
-      '/preview   Open deployed blog   /publish   Publish draft',
-    ];
-  }
-
-  return homeActions
-    .map(([label, command]) => `${command.padEnd(10, ' ')} ${label}`);
-}
-
 function isCompactLayout(width, height) {
   return width < 72 || height < 22;
 }
 
 function isTinyLayout(width, height) {
   return width < 40 || height < 8;
+}
+
+function renderHomeCommandSuggestions(lines, styles, height) {
+  if (!homeCommandInputRect) return;
+
+  const suggestions = getCommandSuggestions();
+  selectedCommandIndex = clamp(
+    selectedCommandIndex,
+    0,
+    Math.max(0, suggestions.length - 1),
+  );
+
+  const inputTop = homeCommandInputRect.row - 1;
+  const inputBottom = homeCommandInputRect.row + 1;
+  const rowsBelow = Math.max(0, height - inputBottom);
+  const rowsAbove = Math.max(0, inputTop - 1);
+  const availableRows = Math.max(rowsBelow, rowsAbove);
+  const visibleCount = Math.max(
+    1,
+    Math.min(suggestions.length || 1, 5, Math.max(1, availableRows - 2)),
+  );
+  const panelHeight = visibleCount + 2;
+  const startRow =
+    rowsBelow >= panelHeight
+      ? inputBottom + 1
+      : Math.max(1, inputTop - panelHeight);
+  const startCol = homeCommandInputRect.column;
+  const panelWidth = homeCommandInputRect.width;
+  const innerWidth = panelWidth - 2;
+
+  commandScroll = visibleSelectionScroll(
+    selectedCommandIndex,
+    commandScroll,
+    suggestions.length,
+    visibleCount,
+  );
+
+  fillRect(lines, styles, startRow, startCol, panelWidth, panelHeight, 'surface:normal');
+  put(
+    lines,
+    styles,
+    startRow,
+    startCol,
+    `┌${'─'.repeat(Math.max(0, innerWidth))}┐`,
+    'surface:border',
+  );
+
+  const pageCommands = suggestions.slice(commandScroll, commandScroll + visibleCount);
+  for (let pageIndex = 0; pageIndex < visibleCount; pageIndex += 1) {
+    const row = startRow + pageIndex + 1;
+    const commandIndex = commandScroll + pageIndex;
+    const command = pageCommands[pageIndex];
+    const selected = command && commandIndex === selectedCommandIndex;
+    const styleName = selected ? 'surface:selected' : 'surface:normal';
+    const text = command
+      ? `${selected ? '›' : ' '} ${command.name.padEnd(12, ' ')} ${command.label}`
+      : '  No matching command.';
+
+    fillRect(lines, styles, row, startCol + 1, innerWidth, 1, styleName);
+    put(lines, styles, row, startCol, '│', 'surface:border');
+    put(lines, styles, row, startCol + 1, padDisplayWidth(text, innerWidth), styleName);
+    put(lines, styles, row, startCol + panelWidth - 1, '│', 'surface:border');
+  }
+
+  const footerText = clipDisplayWidth(` ${commandSelectionHelp} `, innerWidth);
+  put(
+    lines,
+    styles,
+    startRow + panelHeight - 1,
+    startCol,
+    `└${footerText}${'─'.repeat(Math.max(0, innerWidth - displayWidth(footerText)))}┘`,
+    'surface:muted',
+  );
 }
 
 function renderCommandPalette(lines, styles, width, height) {
@@ -1058,11 +2054,12 @@ function renderCommandPalette(lines, styles, width, height) {
   const startCol = Math.max(1, Math.floor((width - panelWidth) / 2) + 1);
   const innerWidth = panelWidth - 2;
 
-  commandScroll = clamp(commandScroll, 0, Math.max(0, suggestions.length - visibleCount));
-  if (selectedCommandIndex < commandScroll) commandScroll = selectedCommandIndex;
-  if (selectedCommandIndex >= commandScroll + visibleCount) {
-    commandScroll = selectedCommandIndex - visibleCount + 1;
-  }
+  commandScroll = visibleSelectionScroll(
+    selectedCommandIndex,
+    commandScroll,
+    suggestions.length,
+    visibleCount,
+  );
 
   fillRect(lines, styles, startRow, startCol, panelWidth, panelHeight, 'surface:normal');
   put(lines, styles, startRow, startCol, panelTopLine(panelWidth, 'Commands', 'esc'), 'surface:border');
@@ -1107,7 +2104,7 @@ function renderCommandPalette(lines, styles, width, height) {
     styles,
     startRow + panelHeight - 2,
     startCol,
-    `│ ${padDisplayWidth('Enter run  Esc close  ↑/↓ select', innerWidth - 2)} │`,
+    `│ ${padDisplayWidth(commandSelectionHelp, innerWidth - 2)} │`,
     'surface:muted',
   );
   put(
@@ -1146,17 +2143,12 @@ function renderOptionSelector(lines, styles, width, height) {
   const startCol = Math.max(1, Math.floor((width - panelWidth) / 2) + 1);
   const innerWidth = panelWidth - 4;
 
-  optionSelector.scroll = clamp(
+  optionSelector.scroll = visibleSelectionScroll(
+    optionSelector.selectedIndex,
     optionSelector.scroll,
-    0,
-    Math.max(0, options.length - visibleCount),
+    options.length,
+    visibleCount,
   );
-  if (optionSelector.selectedIndex < optionSelector.scroll) {
-    optionSelector.scroll = optionSelector.selectedIndex;
-  }
-  if (optionSelector.selectedIndex >= optionSelector.scroll + visibleCount) {
-    optionSelector.scroll = optionSelector.selectedIndex - visibleCount + 1;
-  }
 
   fillRect(lines, styles, startRow, startCol, panelWidth, panelHeight, 'surface:normal');
   put(lines, styles, startRow + 1, startCol + 2, optionSelector.title, 'surface:strong');
@@ -1222,10 +2214,11 @@ function renderPosts(lines, styles, width, height) {
 
   const visibleRows = getVisiblePostRows();
   postsIndex = clamp(postsIndex, 0, Math.max(0, visibleRows.length - 1));
+  const blocks = layoutPostBlocks(visibleRows, contentWidth);
   const visibleCount = Math.max(1, height - 7);
-  postsScroll = clamp(postsScroll, 0, Math.max(0, visibleRows.length - visibleCount));
-  if (postsIndex < postsScroll) postsScroll = postsIndex;
-  if (postsIndex >= postsScroll + visibleCount) postsScroll = postsIndex - visibleCount + 1;
+  const totalLines = blocks.at(-1)?.end ?? 0;
+  postsScroll = clamp(postsScroll, 0, Math.max(0, totalLines - visibleCount));
+  ensureSelectedPostVisible(blocks[postsIndex], visibleCount, totalLines);
 
   put(lines, styles, 3, col, 'Posts', 'accent');
 
@@ -1234,20 +2227,64 @@ function renderPosts(lines, styles, width, height) {
     return;
   }
 
-  const pageRows = visibleRows.slice(postsScroll, postsScroll + visibleCount);
-  for (let pageIndex = 0; pageIndex < pageRows.length; pageIndex += 1) {
-    const rowIndex = postsScroll + pageIndex;
-    const row = pageRows[pageIndex];
-    const prefix = rowIndex === postsIndex ? '> ' : '  ';
-    put(
-      lines,
-      styles,
-      pageIndex + 5,
-      col,
-      `${prefix}${padDisplayWidth(row.status, 6)} ${padDisplayWidth(row.date, 10)} ${row.title}  ${row.path}`,
-      rowIndex === postsIndex ? 'selected' : 'normal',
-    );
+  const pageLines = blocks
+    .flatMap((block) =>
+      block.lines.map((text) => ({
+        selected: block.rowIndex === postsIndex,
+        text,
+      })),
+    )
+    .slice(postsScroll, postsScroll + visibleCount);
+  for (const [pageIndex, line] of pageLines.entries()) {
+    const style = line.selected ? 'selected' : 'normal';
+    if (line.selected) {
+      fillRect(lines, styles, pageIndex + 5, col, contentWidth, 1, style);
+    }
+    put(lines, styles, pageIndex + 5, col, line.text, style);
   }
+}
+
+function layoutPostBlocks(noteRows, width) {
+  const titleColumn = 20;
+  const titleWidth = Math.max(1, width - titleColumn);
+  let offset = 0;
+
+  return noteRows.map((row, rowIndex) => {
+    const titleLines = wrapLine(row.title, titleWidth);
+    const prefix = rowIndex === postsIndex ? '> ' : '  ';
+    const indent = ' '.repeat(titleColumn);
+    const lines = titleLines.map((title, index) =>
+      index === 0
+        ? `${prefix}${padDisplayWidth(row.status, 6)} ${padDisplayWidth(row.date, 10)} ${title}`
+        : `${indent}${title}`,
+    );
+    const block = {
+      end: offset + lines.length,
+      lines,
+      rowIndex,
+      start: offset,
+    };
+    offset = block.end;
+    return block;
+  });
+}
+
+function ensureSelectedPostVisible(block, visibleCount, totalLines) {
+  if (!block) {
+    postsScroll = 0;
+    return;
+  }
+
+  if (block.start < postsScroll) {
+    postsScroll = block.start;
+  } else if (block.end > postsScroll + visibleCount) {
+    postsScroll =
+      block.lines.length > visibleCount
+        ? block.start
+        : block.end - visibleCount;
+  }
+
+  postsScroll = clamp(postsScroll, 0, Math.max(0, totalLines - visibleCount));
 }
 
 function renderReader(lines, styles, width, height) {
@@ -1281,6 +2318,206 @@ function renderReader(lines, styles, width, height) {
     const line = visibleLines[index];
     put(lines, styles, index + 7, col, line.text, line.style);
   }
+}
+
+function renderEditor(lines, styles, width, height) {
+  if (!editor) {
+    put(lines, styles, 2, 2, 'Could not open editor.', 'accent');
+    return;
+  }
+
+  const contentCol = 2;
+  const contentWidth = Math.max(1, width - contentCol);
+  const header = `Edit ${editor.row.path}  ${editor.keymap}${isEditorDirty() ? '  [+]' : ''}`;
+  put(lines, styles, 1, contentCol, clipDisplayWidth(header, contentWidth), 'accent');
+  put(lines, styles, 2, contentCol, '─'.repeat(contentWidth), 'border');
+
+  const layout = layoutEditorBuffer(contentWidth);
+  const bodyRows = getEditorPageRows(height);
+  const cursorVisualIndex = findEditorCursorVisualIndex(layout);
+  editor.scroll = clamp(editor.scroll, 0, Math.max(0, layout.length - bodyRows));
+  if (cursorVisualIndex < editor.scroll) {
+    editor.scroll = cursorVisualIndex;
+  } else if (cursorVisualIndex >= editor.scroll + bodyRows) {
+    editor.scroll = cursorVisualIndex - bodyRows + 1;
+  }
+
+  const visibleLines = layout.slice(editor.scroll, editor.scroll + bodyRows);
+  for (const [index, line] of visibleLines.entries()) {
+    const row = index + 3;
+    if (line.prefix) put(lines, styles, row, contentCol, line.prefix, 'muted');
+    put(lines, styles, row, contentCol + displayWidth(line.prefix), line.text, line.style);
+  }
+
+  const footer = editorFooterStatus();
+  put(lines, styles, height - 1, 1, clipDisplayWidth(footer, width), 'muted');
+  const prompt = editorPromptText();
+  put(lines, styles, height, 1, clipDisplayWidth(prompt, width), 'normal');
+
+  if (editor.promptMode) {
+    cursorTarget = {
+      column: clamp(displayWidth(prompt) + 1, 1, width),
+      row: height,
+    };
+    return;
+  }
+
+  const cursorLine = layout[cursorVisualIndex] ?? layout.at(-1);
+  const cursorRow = cursorVisualIndex - editor.scroll + 3;
+  const beforeCursor = Array.from(editor.lines[editor.cursor.line] ?? '')
+    .slice(cursorLine?.start ?? 0, editor.cursor.column)
+    .join('');
+  cursorTarget = {
+    column: clamp(
+      contentCol + displayWidth(cursorLine?.prefix ?? '') + displayWidth(beforeCursor),
+      1,
+      width,
+    ),
+    row: clamp(cursorRow, 3, Math.max(3, height - 2)),
+  };
+}
+
+function renderEditorTiny(lines, styles, width, height) {
+  if (height > 1) {
+    put(lines, styles, 1, 1, `myblog editor · ${width}x${height} · enlarge window`, 'muted');
+  }
+  if (height > 2 && editor) {
+    put(
+      lines,
+      styles,
+      2,
+      1,
+      clipDisplayWidth(`${editor.row.path}${isEditorDirty() ? '  [+]' : ''}`, width),
+      'normal',
+    );
+  }
+  put(lines, styles, height, 1, 'buffer preserved', 'muted');
+  cursorTarget = { column: 1, row: height };
+}
+
+function layoutEditorBuffer(width) {
+  if (!editor) return [];
+
+  const numberWidth = editorLineNumbers ? String(editor.lines.length).length + 1 : 0;
+  const textWidth = Math.max(1, width - numberWidth);
+  const styles = editorMarkdownStyles(editor.lines);
+  const layout = [];
+
+  for (const [lineIndex, logicalLine] of editor.lines.entries()) {
+    const characters = Array.from(logicalLine);
+    const segments = [];
+    let start = 0;
+    while (start < characters.length) {
+      let end = start;
+      let used = 0;
+      while (end < characters.length) {
+        const characterDisplayWidth = characterWidth(characters[end]);
+        if (end > start && used + characterDisplayWidth > textWidth) break;
+        used += characterDisplayWidth;
+        end += 1;
+      }
+      segments.push({ end, start, text: characters.slice(start, end).join('') });
+      start = end;
+    }
+    if (!segments.length) segments.push({ end: 0, start: 0, text: '' });
+
+    for (const [segmentIndex, segment] of segments.entries()) {
+      const prefix = editorLineNumbers
+        ? segmentIndex === 0
+          ? `${String(lineIndex + 1).padStart(numberWidth - 1, ' ')} `
+          : ' '.repeat(numberWidth)
+        : '';
+      layout.push({
+        ...segment,
+        lineIndex,
+        prefix,
+        style: styles[lineIndex],
+      });
+    }
+  }
+
+  return layout;
+}
+
+function findEditorCursorVisualIndex(layout) {
+  if (!editor) return 0;
+
+  const matchingIndexes = [];
+  for (const [index, line] of layout.entries()) {
+    if (line.lineIndex === editor.cursor.line) matchingIndexes.push(index);
+  }
+  for (const index of matchingIndexes) {
+    const line = layout[index];
+    if (editor.cursor.column < line.end || index === matchingIndexes.at(-1)) {
+      return index;
+    }
+  }
+  return matchingIndexes.at(-1) ?? 0;
+}
+
+function editorMarkdownStyles(logicalLines) {
+  const styles = [];
+  let inCodeBlock = false;
+  let inFrontmatter = false;
+
+  for (const [index, line] of logicalLines.entries()) {
+    if (index === 0 && line.trim() === '---') {
+      inFrontmatter = true;
+      styles.push('border');
+      continue;
+    }
+    if (inFrontmatter && line.trim() === '---') {
+      inFrontmatter = false;
+      styles.push('border');
+      continue;
+    }
+    if (inFrontmatter) {
+      styles.push('faint');
+      continue;
+    }
+    if (/^\s*(```|~~~)/.test(line)) {
+      inCodeBlock = !inCodeBlock;
+      styles.push('muted');
+    } else if (inCodeBlock) {
+      styles.push('faint');
+    } else if (/^\s*#{1,6}\s+/.test(line)) {
+      styles.push('accent');
+    } else if (/^\s*>/.test(line)) {
+      styles.push('muted');
+    } else if (/^\s*([-*+]|\d+\.)\s+/.test(line)) {
+      styles.push('accent');
+    } else {
+      styles.push('normal');
+    }
+  }
+
+  return styles;
+}
+
+function editorFooterStatus() {
+  if (!editor) return '';
+
+  const dirty = isEditorDirty() ? 'modified' : 'saved';
+  const position = `${editor.cursor.line + 1}:${editor.cursor.column + 1}`;
+  if (editor.keymap === 'vim') {
+    return `${editor.vimMode.toUpperCase()}  ${dirty}  ${position}  i/a/o/O insert  :w save  :q exit  / find`;
+  }
+  return `${dirty}  ${position}  ^S save  ^F find  ^Z undo  ^Y redo  Esc exit`;
+}
+
+function editorPromptText() {
+  if (!editor) return '';
+
+  if (editor.promptMode === 'command') return `:${editor.commandInput}`;
+  if (editor.promptMode === 'search') return `/${editor.commandInput}`;
+  if (editor.promptMode === 'find') return `Find: ${editor.commandInput}`;
+  if (editor.status) return editor.status;
+  if (editor.keymap === 'vim' && editor.vimPending) return `${editor.vimPending}…`;
+  return '';
+}
+
+function getEditorPageRows(height = process.stdout.rows || 32) {
+  return Math.max(1, height - 4);
 }
 
 function renderSyncConfirm(lines, styles, width, height) {
@@ -1355,7 +2592,9 @@ function footerStatus(width, height) {
   if (view === 'reader') return readerFooterStatus(width, height);
   if (view === 'posts' && pendingDeletePath) return `Press d again to trash: ${pendingDeletePath}`;
   if (view === 'posts' && postsMode === 'trash') return 't posts  Esc home  / commands';
-  if (view === 'posts') return 'Enter read  e edit  d d trash  t trash  Esc home  / commands';
+  if (view === 'posts') {
+    return 'Enter read  e default edit  i builtin  o Typora  d d trash  t trash  Esc home  / commands';
+  }
   if (view === 'sync-confirm') return 'Enter sync  Esc later  / commands';
   if (view === 'logs' || view === 'help') return 'Esc home  / commands';
   return '/ commands  quit exit';
@@ -1372,8 +2611,8 @@ function readerFooterStatus(width, height) {
   const prefix = readerPrefix ? `${readerPrefix}…  ` : '';
   const controls =
     width >= 90
-      ? 'j/k scroll  ^F/^B page  gg top  G end  n/p next  e edit  Esc posts  / commands'
-      : 'j/k  ^F/^B  gg/G  n/p  e  Esc  /';
+      ? 'j/k scroll  ^F/^B page  gg top  G end  n/p next  e edit  i builtin  o Typora  Esc posts  / commands'
+      : 'j/k  ^F/^B  gg/G  n/p  e/i/o  Esc  /';
   const footerWidth = width - (width > 54 ? 2 : 0);
   const controlsWidth = Math.max(
     0,
@@ -1400,6 +2639,26 @@ function getCommandSuggestions() {
       command.help.toLowerCase().includes(query)
     );
   });
+}
+
+function setCommandInput(value) {
+  input = value;
+  resetCommandSelection();
+}
+
+function resetCommandSelection() {
+  selectedCommandIndex = 0;
+  commandScroll = 0;
+}
+
+function visibleSelectionScroll(selectedIndex, scroll, totalItems, visibleCount) {
+  const maxScroll = Math.max(0, totalItems - visibleCount);
+  const boundedScroll = clamp(scroll, 0, maxScroll);
+  if (selectedIndex < boundedScroll) return selectedIndex;
+  if (selectedIndex >= boundedScroll + visibleCount) {
+    return selectedIndex - visibleCount + 1;
+  }
+  return boundedScroll;
 }
 
 function getDraftRows() {
@@ -1811,5 +3070,9 @@ function restoreTerminal() {
     clearTimeout(resizeTimer);
     resizeTimer = null;
   }
-  process.stdout.write(`${ansi.reset}\x1b[?7h\x1b[?25h\x1b[?1049l`);
+  process.stdout.write(`${ansi.reset}\x1b]112\x07\x1b[?7h\x1b[?25h\x1b[?1049l`);
+}
+
+function cursorColorSequence() {
+  return `\x1b]12;${themes[themeName].cursorColor}\x07`;
 }

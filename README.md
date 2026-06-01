@@ -35,30 +35,29 @@ npm run admin:install
 myblog
 ```
 
-后台提供几个固定动作：
+后台命令：
 
-- `/home`：返回后台首页。
-- `/write`：创建或打开今天的 Markdown，并用 Typora 打开。同一天已有草稿或文章时会直接复用。
-- `/write 20260530`：创建或打开指定日期草稿。同一天只允许一篇 blog。
-- `/posts`：统一阅读和管理草稿、已发布文章及本地回收站。
-- `/preview`：打开已经部署的线上博客：`https://danding9717.github.io/`。
-- `/publish`：打开草稿选择弹层，确认后发布，自动整理 frontmatter、图片并运行构建检查。
-- `/publish 20260529`：直接发布指定日期草稿。
-- `/sync`：运行构建检查，提交当前改动并推送到 GitHub。
-- `/sync Add note 20260529`：使用自定义提交信息同步。
-- `/theme`：打开主题选择弹层。
-- `/theme light`、`/theme dark`、`/theme diablo`：直接切换指定主题。`dark` 和 `diablo` 会继承终端背景，适配终端透明效果。
-- `/logs`：查看最近的后台操作记录。
-- `/help`：查看命令帮助。
-- `/quit`：关闭后台。
+- `/home`：返回首页。
+- `/write [YYYYMMDD]`：创建或打开今天或指定日期的 Markdown，并用默认编辑器打开。同一天已有内容时直接复用。
+- `/posts`：阅读和管理草稿、已发布文章及本地回收站。
+- `/preview`：打开已经部署的线上博客。
+- `/publish [YYYYMMDD]`：选择草稿发布，或直接发布指定日期草稿；自动整理 frontmatter、图片并运行构建检查。
+- `/sync [提交信息]`：运行构建检查，提交改动并推送到 GitHub。
+- `/theme [light|dark|diablo]`：打开主题选择弹层，或直接切换主题。
+- `/settings`：打开设置弹层。也可以直接设置 `editor builtin|typora`、`keymap simple|vim`、`line-numbers on|off`。
+- `/logs`、`/help`、`/quit`：查看操作记录、查看帮助或退出后台。
 
-键盘操作：按 `/` 调出中央命令弹层，`Enter` 执行，`↑/↓` 或 `j/k` 移动，`Esc` 关闭弹层并返回原页面。`/theme` 和 `/publish` 会继续打开可搜索的二级选择弹层；在二级弹层中输入文字筛选，使用 `↑/↓` 移动，按 `Enter` 确认，按 `Esc` 返回原页面。后台底部只保留当前页面快捷键和一行简洁输入框。在首页输入 `quit` 并按 `Enter` 也可以直接退出。
+首页默认只显示独立输入框。输入 `/` 或关键词时会出现实时筛选后的紧凑候选；使用 `↑/↓` 或 `j/k` 移动，按 `Enter` 执行，按 `Esc` 关闭。`/theme`、`/publish` 和 `/settings` 会继续打开可搜索的二级选择弹层。首页输入 `quit` 也可以退出。
 
-在 `/posts` 页面中，按 `Enter` 直接在后台阅读选中的草稿或文章，按 `e` 用 Typora 编辑，按 `t` 切换本地回收站。删除内容时需要连续按两次 `d`，文件会移动到 `.blog-trash/`，不会立刻抹掉。
+在 `/posts` 页面中，按 `Enter` 直接在后台阅读选中的草稿或文章，按 `e` 使用默认编辑器，按 `i` 强制使用内置编辑器，按 `o` 强制使用 Typora，按 `t` 切换本地回收站。阅读页也支持 `e/i/o`。列表只显示状态、日期和标题，不显示文件路径；拖动终端窗口时，较长的中英文标题会按可用宽度自动换行。删除内容时需要连续按两次 `d`，文件会移动到 `.blog-trash/`，不会立刻抹掉。
+
+内置编辑器会显示完整 Markdown 或 MDX 原文，包括 frontmatter，并按窗口宽度自动换行。默认使用简洁模式：直接输入文字，使用方向键移动，按 `Ctrl+S` 保存、`Ctrl+F` 查找、`Ctrl+Z` 撤销、`Ctrl+Y` 重做、`Esc` 退出。存在未保存内容时，会先询问保存、丢弃或取消。
+
+在 `/settings` 中切换到 Vim 模式后，内置编辑器会以 Normal 模式打开。支持 `h/j/k/l`、`0/$`、`w/b`、`gg/G`、`i/a/o/O`、`x`、`dd`、`u`、`Ctrl+R`、`/`、`n/N`，以及 `:w`、`:q`、`:wq`、`:q!`。Insert 模式中按 `Esc` 返回 Normal 模式。
 
 阅读页面会隐藏 frontmatter，并轻量展示标题层级、列表、引用、代码块和图片占位。使用 `↑/↓` 或 `j/k` 逐行滚动，使用 `Ctrl+F/Ctrl+B`、`PageUp/PageDown` 或空格翻页，使用 Vim 风格的 `gg` 跳到开头、`G` 跳到结尾；也兼容 `1G` 跳到开头。使用 `n/p` 阅读下一篇或上一篇，按 `Esc` 返回文章列表。阅读位置会在当前后台进程中保留。
 
-发布完成后，后台会询问是否立即同步到 GitHub。按 `Enter` 同步，按 `Esc` 稍后处理。GitHub Pages 部署需要一点时间；部署完成后用 `/preview` 查看线上版本。未同步的本地内容不会出现在 `/preview` 打开的页面中。
+发布完成后，后台会询问是否立即同步到 GitHub。按 `Enter` 同步，按 `Esc` 稍后处理；部署完成后可用 `/preview` 查看线上版本。
 
 发布时会自动：
 
@@ -85,7 +84,7 @@ git push
 
 草稿目录默认被 Git 忽略，避免未完成内容被推到公开仓库。
 
-后台主题选择会保存在 `~/.config/myblog/config.json`，只对本机 TUI 生效，不会提交到 GitHub。`light` 使用固定白底，`dark` 和 `diablo` 继承终端自身背景；中央命令弹层仍使用实色背景以保持可读性。拖动终端边框时，界面会根据窗口尺寸自动切换为标准、紧凑或极小布局；极小布局仍保留命令输入框。
+后台主题和编辑器设置会保存在 `~/.config/myblog/config.json`，只对本机 TUI 生效，不会提交到 GitHub。默认使用内置编辑器、简洁键位和隐藏行号。`light` 使用固定白底，`dark` 和 `diablo` 继承终端自身背景；命令候选和二级选择弹层仍使用实色背景以保持可读性。主题切换时，后台也会同步调整终端真实光标颜色；退出后台后恢复终端默认光标。拖动终端边框时，界面会根据窗口尺寸自动切换为标准、紧凑或极小布局；极小布局仍保留命令输入框，内置编辑器缓冲区不会丢失。
 
 如果只想在项目目录里临时启动，也可以用：
 
@@ -126,26 +125,13 @@ draft: false
 
 ## GitHub Pages 部署
 
-这个项目按 GitHub Pages 用户主页配置，适合仓库名为：
-
-```text
-danding9717.github.io
-```
-
-部署前请做两件事：
-
-1. 在 `astro.config.mjs` 中确认 `site` 是 `https://danding9717.github.io`。
-2. 在 GitHub 仓库的 Settings -> Pages 中，把 Source 设置为 GitHub Actions。
-
-之后把代码推送到 `main` 分支，`.github/workflows/deploy.yml` 会自动构建并发布。
-
-当前仓库对应的访问地址是：
+项目按 GitHub Pages 用户主页配置。确认 `astro.config.mjs` 中的 `site` 为 `https://danding9717.github.io`，并在仓库 Settings -> Pages 中将 Source 设为 GitHub Actions。推送到 `main` 后，工作流会自动构建并发布到：
 
 ```text
 https://danding9717.github.io/
 ```
 
-如果以后想部署到项目站点，例如 `https://yourname.github.io/personal-blog/`，需要在 `astro.config.mjs` 中额外设置：
+如果以后改为项目站点，例如 `https://yourname.github.io/personal-blog/`，需要在 `astro.config.mjs` 中额外设置：
 
 ```js
 base: '/personal-blog',

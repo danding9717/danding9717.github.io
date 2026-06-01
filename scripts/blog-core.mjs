@@ -15,10 +15,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const projectRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-export const draftsDir = path.join(projectRoot, 'src/content/drafts');
-export const postsDir = path.join(projectRoot, 'src/content/posts');
-export const publicImagesDir = path.join(projectRoot, 'public/images');
-export const trashDir = path.join(projectRoot, '.blog-trash');
+const draftsDir = path.join(projectRoot, 'src/content/drafts');
+const postsDir = path.join(projectRoot, 'src/content/posts');
+const publicImagesDir = path.join(projectRoot, 'public/images');
+const trashDir = path.join(projectRoot, '.blog-trash');
 
 const blogTimezone = process.env.BLOG_TIMEZONE || 'Asia/Shanghai';
 const imageExtensions = new Set([
@@ -40,7 +40,7 @@ export class BlogError extends Error {
   }
 }
 
-export async function ensureBaseDirs() {
+async function ensureBaseDirs() {
   await mkdir(draftsDir, { recursive: true });
   await mkdir(postsDir, { recursive: true });
   await mkdir(publicImagesDir, { recursive: true });
@@ -58,7 +58,7 @@ export function compactDateForToday() {
   return `${values.year}${values.month}${values.day}`;
 }
 
-export function normalizeCompactDate(value) {
+function normalizeCompactDate(value) {
   if (!value) {
     throw new BlogError('请提供日期，例如：20260529');
   }
@@ -71,7 +71,7 @@ export function normalizeCompactDate(value) {
   return compact;
 }
 
-export function toIsoDate(compactDate) {
+function toIsoDate(compactDate) {
   const year = Number(compactDate.slice(0, 4));
   const month = Number(compactDate.slice(4, 6));
   const day = Number(compactDate.slice(6, 8));
@@ -194,14 +194,7 @@ export async function listNotes() {
     const absolutePath = path.join(postsDir, file);
     const { frontmatter } = splitFrontmatter(await readFile(absolutePath, 'utf8'));
     const metadata = parseFrontmatter(frontmatter);
-    rows.push({
-      compact: path.basename(file).replace(/\.(md|mdx)$/i, ''),
-      date: metadata.date || '-',
-      filePath: absolutePath,
-      path: relative(absolutePath),
-      status: metadata.draft === 'true' ? 'draft?' : 'post',
-      title: stripQuotes(metadata.title) || path.basename(file, path.extname(file)),
-    });
+    rows.push(createPostRow(file, absolutePath, metadata));
   }
 
   return rows.sort((a, b) => `${b.date} ${b.title}`.localeCompare(`${a.date} ${a.title}`));
@@ -355,7 +348,7 @@ export async function moveNoteToTrash(target) {
   };
 }
 
-export async function findNote(identifier) {
+async function findNote(identifier) {
   const key = normalizeIdentifier(identifier);
   const rows = await listNotes();
   const matches = rows.filter((row) => {
@@ -417,7 +410,7 @@ export function formatTrashItems(items) {
     .join('\n');
 }
 
-export function getGitStatus() {
+function getGitStatus() {
   const result = runCommand('git', ['status', '--porcelain'], {
     allowFailure: true,
   });
@@ -495,7 +488,7 @@ export function commitAndPush(message, options = {}) {
   };
 }
 
-export function findExistingDraft(compactDate) {
+function findExistingDraft(compactDate) {
   const mdPath = path.join(draftsDir, `${compactDate}.md`);
   const mdxPath = path.join(draftsDir, `${compactDate}.mdx`);
   if (existsSync(mdPath)) return mdPath;
@@ -503,7 +496,7 @@ export function findExistingDraft(compactDate) {
   return null;
 }
 
-export async function findPublishedNotesByDate(isoDate) {
+async function findPublishedNotesByDate(isoDate) {
   if (!isoDate) return [];
 
   const posts = await listMarkdownFiles(postsDir);
@@ -516,22 +509,26 @@ export async function findPublishedNotesByDate(isoDate) {
 
     if (metadata.draft === 'true') continue;
     if (metadata.date === isoDate) {
-      matches.push({
-        compact: path.basename(file).replace(/\.(md|mdx)$/i, ''),
-        date: metadata.date,
-        filePath: absolutePath,
-        path: relative(absolutePath),
-        status: 'post',
-        title: stripQuotes(metadata.title) || path.basename(file, path.extname(file)),
-      });
+      matches.push(createPostRow(file, absolutePath, metadata));
     }
   }
 
   return matches.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function relative(filePath) {
+function relative(filePath) {
   return path.relative(projectRoot, filePath);
+}
+
+function createPostRow(file, filePath, metadata) {
+  return {
+    compact: path.basename(file).replace(/\.(md|mdx)$/i, ''),
+    date: metadata.date || '-',
+    filePath,
+    path: relative(filePath),
+    status: metadata.draft === 'true' ? 'draft?' : 'post',
+    title: stripQuotes(metadata.title) || path.basename(file, path.extname(file)),
+  };
 }
 
 async function createTrashSessionDir() {
