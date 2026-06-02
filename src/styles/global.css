@@ -48,17 +48,27 @@ a:hover {
 
 .site-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
   padding: 56px 0 44px;
 }
 
 .site-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: 0;
   text-decoration: none;
+}
+
+.site-logo {
+  display: block;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
 }
 
 .site-nav {
@@ -86,6 +96,10 @@ a:hover {
 }
 
 .post-preview {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
   padding: 0 0 48px;
   margin: 0 0 48px;
   border-bottom: 1px solid var(--line);
@@ -99,7 +113,7 @@ a:hover {
 }
 
 .post-title {
-  margin: 8px 0 6px;
+  margin: 0 0 12px;
   font-size: 1.55rem;
   font-weight: 600;
   line-height: 1.35;
@@ -113,16 +127,23 @@ a:hover {
 .post-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 7px;
   align-items: center;
 }
 
-.tag::before {
-  content: "#";
+.tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 2px 12px;
+  color: #ffffff;
+  background: #111111;
+  border-radius: 999px;
+  line-height: 1.25;
 }
 
 .post-excerpt {
-  margin: 20px 0 12px;
+  margin: 28px 0 12px;
   color: #222222;
   font-size: 1.03rem;
   line-height: 1.86;
@@ -193,6 +214,10 @@ a:hover {
 }
 
 .post-detail {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
   margin-bottom: 72px;
 }
 
@@ -201,8 +226,7 @@ a:hover {
 }
 
 .post-header h1 {
-  margin-top: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .prose {
@@ -347,8 +371,18 @@ a:hover {
   }
 
   .post-preview {
+    display: block;
     padding-bottom: 38px;
     margin-bottom: 38px;
+  }
+
+  .post-preview-content,
+  .post-detail-content {
+    margin-top: 8px;
+  }
+
+  .post-detail {
+    display: block;
   }
 
   .post-title {

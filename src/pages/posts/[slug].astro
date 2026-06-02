@@ -19,32 +19,36 @@ const { Content } = await render(post);
 
 <BaseLayout title={post.data.title} description={post.data.description}>
   <article class="post-detail">
-    <header class="post-header">
-      <p class="post-date">
-        <time datetime={post.data.date.toISOString()}>
-          {formatDate(post.data.date)}
-        </time>
-      </p>
-      <h1>{post.data.title}</h1>
-      <p class="post-meta">
-        <span>{post.data.category}</span>
-        {
-          post.data.tags.map((tag) => (
-            <span class="tag" aria-label={`Tag: ${tag}`}>
-              {tag}
-            </span>
-          ))
-        }
-      </p>
-    </header>
+    <p class="post-date">
+      <time datetime={post.data.date.toISOString()}>
+        {formatDate(post.data.date)}
+      </time>
+    </p>
+    <div class="post-detail-content">
+      <header class="post-header">
+        <h1>{post.data.title}</h1>
+        <p class="post-meta">
+          <span class="tag" aria-label={`Category: ${post.data.category}`}>
+            {post.data.category}
+          </span>
+          {
+            post.data.tags.map((tag) => (
+              <span class="tag" aria-label={`Tag: ${tag}`}>
+                {tag}
+              </span>
+            ))
+          }
+        </p>
+      </header>
 
-    <div class="prose">
-      <Content />
+      <div class="prose">
+        <Content />
+      </div>
+
+      <footer class="post-backlinks">
+        <a href={withBase('/')}>返回首页</a>
+        <a href={withBase('/archive/')}>返回 Archive</a>
+      </footer>
     </div>
-
-    <footer class="post-backlinks">
-      <a href={withBase('/')}>返回首页</a>
-      <a href={withBase('/archive/')}>返回 Archive</a>
-    </footer>
   </article>
 </BaseLayout>

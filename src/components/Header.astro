@@ -19,7 +19,10 @@ function isActive(href: string) {
 ---
 
 <header class="site-header">
-  <a class="site-title" href={withBase('/')}>{SITE_TITLE}</a>
+  <a class="site-title" href={withBase('/')}>
+    <img class="site-logo" src={withBase('/logo.png')} alt="" width="44" height="44" />
+    <span>{SITE_TITLE}</span>
+  </a>
   <nav class="site-nav" aria-label="Primary navigation">
     {
       links.map((link) => (

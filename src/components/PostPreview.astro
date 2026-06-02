@@ -16,19 +16,23 @@ const excerpt = getExcerpt(post);
   <p class="post-date">
     <time datetime={post.data.date.toISOString()}>{date}</time>
   </p>
-  <h2 class="post-title">
-    <a href={url}>{post.data.title}</a>
-  </h2>
-  <p class="post-meta">
-    <span>{post.data.category}</span>
-    {
-      post.data.tags.map((tag) => (
-        <span class="tag" aria-label={`Tag: ${tag}`}>
-          {tag}
-        </span>
-      ))
-    }
-  </p>
-  <p class="post-excerpt">{excerpt}</p>
-  <a class="read-more" href={url}>阅读全文</a>
+  <div class="post-preview-content">
+    <h2 class="post-title">
+      <a href={url}>{post.data.title}</a>
+    </h2>
+    <p class="post-meta">
+      <span class="tag" aria-label={`Category: ${post.data.category}`}>
+        {post.data.category}
+      </span>
+      {
+        post.data.tags.map((tag) => (
+          <span class="tag" aria-label={`Tag: ${tag}`}>
+            {tag}
+          </span>
+        ))
+      }
+    </p>
+    <p class="post-excerpt">{excerpt}</p>
+    <a class="read-more" href={url}>阅读全文</a>
+  </div>
 </article>

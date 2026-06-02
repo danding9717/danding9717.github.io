@@ -1,4 +1,4 @@
-# Dan's Notes
+# Dan Ding
 
 一个基于 Astro 的极简个人博客，适合长期写作、个人随笔、技术记录和阅读笔记。内容使用 Markdown / MDX 管理，构建结果是静态页面，适合部署到 GitHub Pages。
 
