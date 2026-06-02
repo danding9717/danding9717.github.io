@@ -1,0 +1,19 @@
+{
+  "name": "Dan Ding",
+  "short_name": "Dan Ding",
+  "icons": [
+    {
+      "src": "/site-icons/dan-ding-icon-192-v3.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/site-icons/dan-ding-icon-512-v3.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#0f0f0d",
+  "background_color": "#0f0f0d",
+  "display": "standalone"
+}
