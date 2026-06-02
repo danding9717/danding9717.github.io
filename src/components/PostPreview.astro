@@ -32,7 +32,8 @@ const excerpt = getExcerpt(post);
         ))
       }
     </p>
-    <p class="post-excerpt">{excerpt}</p>
-    <a class="read-more" href={url}>阅读全文</a>
+    <p class="post-excerpt">
+      <a class="post-excerpt-link" href={url}>{excerpt}</a>
+    </p>
   </div>
 </article>

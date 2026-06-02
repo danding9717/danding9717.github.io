@@ -14,12 +14,26 @@ const pageTitle = title === SITE_TITLE ? SITE_TITLE : `${title} | ${SITE_TITLE}`
 ---
 
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
     <meta name="generator" content={Astro.generator} />
+    <script is:inline>
+      (() => {
+        const themeKey = 'dan-ding-theme';
+        const themes = ['light', 'dark', 'diablo'];
+        let theme = 'light';
+
+        try {
+          const storedTheme = localStorage.getItem(themeKey);
+          if (themes.includes(storedTheme)) theme = storedTheme;
+        } catch {}
+
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
     <link rel="icon" href={withBase('/logo.png')} type="image/png" />
     <link
       rel="alternate"
@@ -37,5 +51,36 @@ const pageTitle = title === SITE_TITLE ? SITE_TITLE : `${title} | ${SITE_TITLE}`
     <footer class="site-footer">
       <p>&copy; {new Date().getFullYear()} {AUTHOR_NAME}</p>
     </footer>
+    <script is:inline>
+      (() => {
+        const themeKey = 'dan-ding-theme';
+        const themes = ['light', 'dark', 'diablo'];
+        const buttons = document.querySelectorAll('[data-theme-option]');
+
+        function applyTheme(theme) {
+          if (!themes.includes(theme)) return;
+
+          document.documentElement.dataset.theme = theme;
+          buttons.forEach((button) => {
+            button.setAttribute(
+              'aria-pressed',
+              String(button.dataset.themeOption === theme),
+            );
+          });
+        }
+
+        applyTheme(document.documentElement.dataset.theme || 'light');
+        buttons.forEach((button) => {
+          button.addEventListener('click', () => {
+            const theme = button.dataset.themeOption;
+            applyTheme(theme);
+
+            try {
+              localStorage.setItem(themeKey, theme);
+            } catch {}
+          });
+        });
+      })();
+    </script>
   </body>
 </html>

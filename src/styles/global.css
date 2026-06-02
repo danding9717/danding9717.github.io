@@ -6,6 +6,59 @@
   --soft: #f7f7f7;
   --line: #e6e3dd;
   --link: #111111;
+  --link-hover: #6f6f6f;
+  --excerpt: #222222;
+  --prose-secondary: #303030;
+  --tag-bg: #111111;
+  --tag-text: #ffffff;
+  --logo: #211b16;
+  --theme-control-bg: #eeeeee;
+  --theme-control-border: #e5e5e5;
+  --theme-control-active: #ffffff;
+  --theme-icon: #6f6f6f;
+  --theme-icon-active: #111111;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #141414;
+  --text: #eeeeee;
+  --muted: #9a9a9a;
+  --soft: #202020;
+  --line: #343434;
+  --link: #eeeeee;
+  --link-hover: #b8b8b8;
+  --excerpt: #dddddd;
+  --prose-secondary: #d0d0d0;
+  --tag-bg: #eeeeee;
+  --tag-text: #151515;
+  --logo: #dddddd;
+  --theme-control-bg: #252525;
+  --theme-control-border: #343434;
+  --theme-control-active: #444444;
+  --theme-icon: #a5a5a5;
+  --theme-icon-active: #ffffff;
+}
+
+:root[data-theme="diablo"] {
+  color-scheme: dark;
+  --bg: #0f0f0d;
+  --text: #e2ded3;
+  --muted: #968b72;
+  --soft: #1b1a14;
+  --line: #4f4527;
+  --link: #d7af00;
+  --link-hover: #f0cb42;
+  --excerpt: #d4cfc2;
+  --prose-secondary: #c9c1af;
+  --tag-bg: #292515;
+  --tag-text: #e5c85b;
+  --logo: #d7af00;
+  --theme-control-bg: #171611;
+  --theme-control-border: #4f4527;
+  --theme-control-active: #342f1b;
+  --theme-icon: #9c9279;
+  --theme-icon-active: #f0cb42;
 }
 
 * {
@@ -36,7 +89,7 @@ a {
 }
 
 a:hover {
-  color: var(--muted);
+  color: var(--link-hover);
 }
 
 .site-header,
@@ -68,26 +121,59 @@ a:hover {
   display: block;
   width: 44px;
   height: 44px;
-  object-fit: contain;
+  flex: 0 0 auto;
+  background: var(--logo);
+  mask: var(--logo-image) center / contain no-repeat;
+  -webkit-mask: var(--logo-image) center / contain no-repeat;
 }
 
-.site-nav {
+.theme-switcher {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 14px;
-  color: var(--muted);
-  font-size: 0.92rem;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--theme-control-bg);
+  border: 1px solid var(--theme-control-border);
+  border-radius: 999px;
 }
 
-.site-nav a {
-  color: inherit;
-  text-decoration: none;
+.theme-option {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--theme-icon);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+  place-items: center;
 }
 
-.site-nav a.active,
-.site-nav a:hover {
-  color: var(--text);
+.theme-option:hover,
+.theme-option:focus-visible {
+  color: var(--theme-icon-active);
+}
+
+.theme-option:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 2px;
+}
+
+.theme-option[aria-pressed="true"] {
+  color: var(--theme-icon-active);
+  background: var(--theme-control-active);
+}
+
+.theme-option svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
 .post-list {
@@ -136,21 +222,29 @@ a:hover {
   align-items: center;
   min-height: 28px;
   padding: 2px 12px;
-  color: #ffffff;
-  background: #111111;
+  color: var(--tag-text);
+  background: var(--tag-bg);
   border-radius: 999px;
   line-height: 1.25;
 }
 
 .post-excerpt {
   margin: 28px 0 12px;
-  color: #222222;
+  color: var(--excerpt);
   font-size: 1.03rem;
   line-height: 1.86;
   white-space: pre-line;
 }
 
-.read-more,
+.post-excerpt-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.post-excerpt-link:hover {
+  color: var(--link-hover);
+}
+
 .archive-entry a,
 .post-backlinks a {
   font-size: 0.94rem;
@@ -279,13 +373,13 @@ a:hover {
 .prose blockquote {
   padding-left: 1em;
   margin-left: 0;
-  color: #303030;
+  color: var(--prose-secondary);
   border-left: 2px solid var(--line);
 }
 
 .prose .note {
   padding-left: 1em;
-  color: #303030;
+  color: var(--prose-secondary);
   border-left: 2px solid var(--line);
 }
 
@@ -360,14 +454,12 @@ a:hover {
   }
 
   .site-header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
+    gap: 16px;
     padding: 34px 0 34px;
   }
 
-  .site-nav {
-    justify-content: flex-start;
+  .site-title {
+    min-width: 0;
   }
 
   .post-preview {

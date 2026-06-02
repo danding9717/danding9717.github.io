@@ -1,39 +1,50 @@
 ---
 import { SITE_TITLE } from '../consts';
-import { stripBase, withBase } from '../utils/paths';
+import { withBase } from '../utils/paths';
 
-const links = [
-  { href: '/', label: 'Home' },
-  { href: '/archive/', label: 'Archive' },
-  { href: '/about/', label: 'About' },
-  { href: '/rss.xml', label: 'RSS' },
-];
-
-const pathname = stripBase(Astro.url.pathname);
-
-function isActive(href: string) {
-  if (href === '/rss.xml') return false;
-  if (href === '/') return pathname === '/';
-  return pathname.startsWith(href);
-}
+const logoImage = `url("${withBase('/logo.png')}")`;
 ---
 
 <header class="site-header">
   <a class="site-title" href={withBase('/')}>
-    <img class="site-logo" src={withBase('/logo.png')} alt="" width="44" height="44" />
+    <span class="site-logo" style={`--logo-image: ${logoImage}`} aria-hidden="true"></span>
     <span>{SITE_TITLE}</span>
   </a>
-  <nav class="site-nav" aria-label="Primary navigation">
-    {
-      links.map((link) => (
-        <a
-          class:list={{ active: isActive(link.href) }}
-          href={withBase(link.href)}
-          aria-current={isActive(link.href) ? 'page' : undefined}
-        >
-          {link.label}
-        </a>
-      ))
-    }
-  </nav>
+  <div class="theme-switcher" role="group" aria-label="主题切换">
+    <button
+      class="theme-option"
+      type="button"
+      data-theme-option="light"
+      aria-label="切换为白色主题"
+      aria-pressed="true"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="3.5"></circle>
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+      </svg>
+    </button>
+    <button
+      class="theme-option"
+      type="button"
+      data-theme-option="dark"
+      aria-label="切换为黑色主题"
+      aria-pressed="false"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M20.5 14.3A8.5 8.5 0 0 1 9.7 3.5 8.5 8.5 0 1 0 20.5 14.3Z"></path>
+      </svg>
+    </button>
+    <button
+      class="theme-option"
+      type="button"
+      data-theme-option="diablo"
+      aria-label="切换为 Diablo 主题"
+      aria-pressed="false"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12.8 2.5c.8 3.3-.8 4.8-2.2 6.3-1.2 1.3-2.3 2.5-2.3 4.6a3.7 3.7 0 0 0 7.4 0c0-1.2-.5-2.3-1.4-3.5-.2 1.6-.9 2.4-1.9 3.1.3-2.7-1.1-4.5.4-10.5Z"></path>
+        <path d="M17.3 7.8c1.7 1.7 2.7 3.6 2.7 5.8a8 8 0 0 1-16 0c0-2.3 1.1-4.5 3.2-6.8"></path>
+      </svg>
+    </button>
+  </div>
 </header>
