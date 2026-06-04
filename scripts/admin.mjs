@@ -18,11 +18,31 @@ import {
   projectRoot,
   publishDraft,
 } from './blog-core.mjs';
+import {
+  aiConnectionLabel,
+  aiConnectionModes,
+  assistantConnectionStatus,
+  backupAndReplaceMarkdownBody,
+  canReplaceWithAction,
+  defaultApiModel,
+  getWritingAssistantAction,
+  listKnownGrokModels,
+  normalizeAiConnection,
+  normalizeAiModel,
+  repairAiModelForConnection,
+  requestWritingAssistance,
+  refreshGrokCliModels,
+  runGrokLogin,
+  writingAssistantActions,
+} from './grok-writing-agent.mjs';
 
 const onlineBlogUrl = 'https://danding9717.github.io/';
 const maxLogLines = 12;
 const themeNames = ['light', 'dark', 'diablo'];
 const commandSelectionHelp = '↑/↓ select  Enter run  Esc close';
+const assistantPanelMinWidth = 34;
+const assistantPanelMaxWidth = 48;
+const assistantSidePanelMinTerminalWidth = 100;
 const commands = [
   { name: '/home', label: 'Home', help: 'Return to the dashboard' },
   { name: '/write', label: 'Write', help: 'Open today draft, or use /write YYYYMMDD' },
@@ -31,7 +51,9 @@ const commands = [
   { name: '/publish', label: 'Publish', help: 'Choose a draft to publish, optional date allowed' },
   { name: '/sync', label: 'Sync', help: 'Build, commit, and push current changes' },
   { name: '/theme', label: 'Theme', help: 'Choose theme, or use /theme light|dark|diablo' },
-  { name: '/settings', label: 'Settings', help: 'Choose editor, keymap, and line numbers' },
+  { name: '/models', label: 'Models', help: 'Choose the Grok writing model' },
+  { name: '/connect', label: 'Connect', help: 'Choose API key or Grok browser login' },
+  { name: '/settings', label: 'Settings', help: 'Choose editor, keymap, model, and connection' },
   { name: '/logs', label: 'Logs', help: 'Show recent activity' },
   { name: '/help', label: 'Help', help: 'Show command help' },
   { name: '/quit', label: 'Quit', help: 'Exit blog admin' },
@@ -128,6 +150,10 @@ let themeName = 'light';
 let defaultEditor = 'builtin';
 let editorKeymap = 'simple';
 let editorLineNumbers = false;
+let aiConnection = aiConnectionModes.apiKey;
+let aiModel = '';
+let grokCliDefaultModel = '';
+let grokCliModels = [];
 let editor = null;
 let resizeTimer = null;
 let readerPrefix = '';
@@ -143,6 +169,7 @@ if (process.argv.includes('--check')) {
 }
 
 await loadPreferences();
+await repairAiModelPreference({ persist: true });
 await refreshRows();
 setupTerminal();
 render();
@@ -492,6 +519,13 @@ async function handleReaderKeys(value, key) {
 async function handleEditorEscape() {
   if (!editor) return;
 
+  if (isAssistantFocused()) {
+    editor.assistant.focused = false;
+    editor.assistant.status = '';
+    render();
+    return;
+  }
+
   if (editor.promptMode) {
     editor.promptMode = '';
     editor.commandInput = '';
@@ -516,6 +550,16 @@ async function handleEditorEscape() {
 async function handleEditorKeys(value, key) {
   if (!editor) return;
 
+  if (key.ctrl && key.name === 'a' && isAssistantEnabled()) {
+    toggleAssistantFocus();
+    return;
+  }
+
+  if (isAssistantFocused()) {
+    await handleAssistantKeys(value, key);
+    return;
+  }
+
   if (editor.promptMode) {
     await handleEditorPromptKeys(value, key);
     return;
@@ -530,6 +574,86 @@ async function handleEditorKeys(value, key) {
     await handleVimEditorKeys(value, key);
   } else {
     await handleSimpleEditorKeys(value, key);
+  }
+}
+
+async function handleAssistantKeys(value, key) {
+  if (!editor?.assistant) return;
+
+  const assistant = editor.assistant;
+
+  if (key.name === 'escape') {
+    assistant.focused = false;
+    assistant.status = '';
+    render();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'r') {
+    await requestAssistantReplacement();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'u') {
+    assistant.input = '';
+    render();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'n') {
+    moveAssistantAction(1);
+    return;
+  }
+
+  if (key.ctrl && key.name === 'p') {
+    moveAssistantAction(-1);
+    return;
+  }
+
+  if (key.name === 'left') {
+    moveAssistantAction(-1);
+    return;
+  }
+
+  if (key.name === 'right' || key.name === 'tab') {
+    moveAssistantAction(1);
+    return;
+  }
+
+  if (key.name === 'up') {
+    scrollAssistantResult(-1);
+    return;
+  }
+
+  if (key.name === 'down') {
+    scrollAssistantResult(1);
+    return;
+  }
+
+  if (key.name === 'pageup') {
+    scrollAssistantResult(-Math.max(1, Math.floor((process.stdout.rows || 32) / 2)));
+    return;
+  }
+
+  if (key.name === 'pagedown') {
+    scrollAssistantResult(Math.max(1, Math.floor((process.stdout.rows || 32) / 2)));
+    return;
+  }
+
+  if (key.name === 'backspace') {
+    assistant.input = Array.from(assistant.input).slice(0, -1).join('');
+    render();
+    return;
+  }
+
+  if (key.name === 'return') {
+    await submitAssistantRequest();
+    return;
+  }
+
+  if (isPrintable(value)) {
+    assistant.input += value;
+    render();
   }
 }
 
@@ -1124,6 +1248,18 @@ async function executeCommand(commandLine) {
       }
       return;
 
+    case '/models':
+      if (args.length) {
+        await changeAiModel(args.join(' '));
+      } else {
+        await openModelSelector();
+      }
+      return;
+
+    case '/connect':
+      openConnectSelector();
+      return;
+
     case '/settings':
       if (args.length) {
         await changeSetting(args[0], args[1]);
@@ -1300,6 +1436,7 @@ async function openBuiltinEditor(row) {
       commandInput: '',
       cursor: { column: 0, line: 0 },
       filePath: row.filePath,
+      assistant: createAssistantState(),
       history: [],
       keymap: editorKeymap,
       lines: rawContent.replace(/\r\n/g, '\n').split('\n'),
@@ -1321,6 +1458,202 @@ async function openBuiltinEditor(row) {
     log(`Could not edit ${row.path}: ${error?.message ?? error}`);
     render();
   }
+}
+
+function createAssistantState() {
+  return {
+    actionIndex: 0,
+    enabled: true,
+    focused: false,
+    input: '',
+    loading: false,
+    result: null,
+    resultExpectedContent: '',
+    resultLines: [],
+    resultWidth: 0,
+    scroll: 0,
+    status: assistantConnectionStatus({
+      cliDefaultModel: grokCliDefaultModel,
+      connection: aiConnection,
+      model: aiModel,
+    }),
+  };
+}
+
+function isAssistantEnabled() {
+  return Boolean(editor?.assistant?.enabled);
+}
+
+function isAssistantFocused() {
+  return Boolean(editor?.assistant?.enabled && editor.assistant.focused);
+}
+
+function toggleAssistantFocus() {
+  if (!isAssistantEnabled()) return;
+
+  editor.assistant.focused = !editor.assistant.focused;
+  editor.assistant.status = '';
+  render();
+}
+
+function currentAssistantAction() {
+  if (!editor?.assistant) return writingAssistantActions[0];
+
+  return writingAssistantActions[
+    clamp(editor.assistant.actionIndex, 0, writingAssistantActions.length - 1)
+  ];
+}
+
+function moveAssistantAction(offset) {
+  if (!isAssistantEnabled()) return;
+
+  const total = writingAssistantActions.length;
+  editor.assistant.actionIndex = (editor.assistant.actionIndex + offset + total) % total;
+  editor.assistant.status = `${currentAssistantAction().label}: ${currentAssistantAction().help}`;
+  render();
+}
+
+function scrollAssistantResult(offset) {
+  if (!isAssistantEnabled()) return;
+
+  const assistant = editor.assistant;
+  assistant.scroll = Math.max(0, assistant.scroll + offset);
+  render();
+}
+
+async function submitAssistantRequest() {
+  if (!isAssistantEnabled()) return;
+
+  const assistant = editor.assistant;
+  const action = currentAssistantAction();
+  const prompt = assistant.input.trim();
+
+  if (assistant.loading) return;
+
+  if (action.id === 'ask' && !prompt) {
+    assistant.status = 'Type a question first.';
+    render();
+    return;
+  }
+
+  if (isEditorDirty()) {
+    assistant.status = 'Save the file with Ctrl+S before asking AI.';
+    render();
+    return;
+  }
+
+  if (aiConnection === aiConnectionModes.grokCli) {
+    await refreshGrokCliDiagnostics({ notify: false });
+  }
+  await repairAiModelPreference({ persist: true });
+  assistant.loading = true;
+  assistant.status = `Asking Grok for ${action.label.toLowerCase()}...`;
+  assistant.result = null;
+  assistant.resultExpectedContent = editor.originalContent;
+  assistant.resultLines = [];
+  assistant.resultWidth = 0;
+  assistant.scroll = 0;
+  busy = true;
+  render();
+
+  try {
+    const result = await requestWritingAssistance({
+      actionId: action.id,
+      connection: aiConnection,
+      draftContent: editor.originalContent,
+      model: aiModel,
+      projectRoot,
+      prompt,
+    });
+    assistant.input = '';
+    assistant.result = result;
+    assistant.status = canReplaceWithAction(result.actionId) && result.replacementBody
+      ? 'Result ready. Ctrl+R applies replacement.'
+      : 'Result ready.';
+  } catch (error) {
+    const message = String(error?.message ?? error);
+    if (message.includes('当前模型不是 Grok CLI 可用模型')) {
+      await refreshGrokCliDiagnostics({ notify: false });
+      aiModel = '';
+      await savePreferences();
+      updateActiveAssistantConnectionStatus();
+      assistant.status = 'Current model is not available in Grok CLI. Switched to CLI default; try again.';
+    } else {
+      assistant.status = message;
+    }
+  } finally {
+    assistant.loading = false;
+    busy = false;
+    render();
+  }
+}
+
+async function requestAssistantReplacement() {
+  if (!isAssistantEnabled()) return;
+
+  const assistant = editor.assistant;
+  const result = assistant.result;
+  if (!result?.replacementBody || !canReplaceWithAction(result.actionId)) {
+    assistant.status = 'Current result cannot replace the body.';
+    render();
+    return;
+  }
+
+  if (isEditorDirty()) {
+    assistant.status = 'Save or reload local edits before applying AI replacement.';
+    render();
+    return;
+  }
+
+  openOptionSelector({
+    title: 'Apply AI replacement',
+    options: [
+      {
+        id: 'apply',
+        label: 'Apply body replacement',
+        searchText: 'apply replace body',
+        onSelect: () => applyAssistantReplacement(),
+      },
+      {
+        id: 'cancel',
+        label: 'Cancel',
+        searchText: 'cancel',
+        onSelect: () => render(),
+      },
+    ],
+  });
+}
+
+async function applyAssistantReplacement() {
+  if (!isAssistantEnabled()) return;
+
+  await runTask(async () => {
+    const assistant = editor.assistant;
+    const result = assistant.result;
+    if (!result?.replacementBody) {
+      assistant.status = 'No replacement body available.';
+      return;
+    }
+
+    const applied = await backupAndReplaceMarkdownBody(
+      editor.filePath,
+      assistant.resultExpectedContent,
+      result.replacementBody,
+    );
+    const nextContent = applied.content;
+    recordEditorHistory();
+    editor.lines = nextContent.replace(/\r\n/g, '\n').split('\n');
+    editor.newline = nextContent.includes('\r\n') ? '\r\n' : '\n';
+    editor.originalContent = nextContent;
+    editor.cursor = { column: 0, line: 0 };
+    editor.scroll = 0;
+    assistant.resultExpectedContent = nextContent;
+    assistant.status = `Applied. Backup: ${path.relative(projectRoot, applied.backupPath)}`;
+    await refreshRows();
+    const refreshedRow = rows.find((row) => row.filePath === editor.filePath);
+    if (refreshedRow) editor.row = refreshedRow;
+    refreshReaderAfterEditorSave(nextContent, editor.row);
+  });
 }
 
 function editorContent() {
@@ -1593,6 +1926,75 @@ function openThemeSelector() {
   });
 }
 
+async function openModelSelector() {
+  if (aiConnection === aiConnectionModes.grokCli) {
+    await refreshGrokCliDiagnostics({ notify: false });
+  }
+  await repairAiModelPreference({ persist: true });
+  const models =
+    aiConnection === aiConnectionModes.grokCli && grokCliModels.length
+      ? grokCliModels
+      : await listKnownGrokModels({
+          connection: aiConnection,
+          selectedModel: aiModel,
+        });
+  const defaultLabel =
+    aiConnection === aiConnectionModes.grokCli
+      ? `Grok CLI default${grokCliDefaultModel ? `  ${grokCliDefaultModel}` : ''}`
+      : defaultApiModel;
+
+  openOptionSelector({
+    title: 'AI model',
+    options: [
+      {
+        active: !aiModel,
+        id: '__default__',
+        label: `Default  ${defaultLabel}`,
+        searchText: `default ${defaultLabel}`,
+        onSelect: () => saveAiModel(''),
+      },
+      ...models.map((model) => ({
+        active: model.id === aiModel,
+        id: model.id,
+        label: `${model.id}${model.name && model.name !== model.id ? `  ${model.name}` : ''}`,
+        searchText: `${model.id} ${model.name} ${model.description}`,
+        onSelect: () => saveAiModel(model.id),
+      })),
+    ],
+    selectedId: aiModel || '__default__',
+  });
+}
+
+function openConnectSelector() {
+  const hasApiKey = Boolean(process.env.XAI_API_KEY);
+  openOptionSelector({
+    title: 'AI connection',
+    options: [
+      {
+        active: aiConnection === aiConnectionModes.apiKey,
+        id: aiConnectionModes.apiKey,
+        label: `XAI_API_KEY  ${hasApiKey ? 'connected' : 'missing'}`,
+        searchText: `xai api key ${hasApiKey ? 'connected' : 'missing'}`,
+        onSelect: () => connectXaiApiKey(),
+      },
+      {
+        active: aiConnection === aiConnectionModes.grokCli,
+        id: 'grok-oauth',
+        label: 'Grok browser login',
+        searchText: 'grok browser login oauth',
+        onSelect: () => connectGrokCli({ deviceAuth: false }),
+      },
+      {
+        id: 'grok-device',
+        label: 'Grok device code',
+        searchText: 'grok device code auth headless',
+        onSelect: () => connectGrokCli({ deviceAuth: true }),
+      },
+    ],
+    selectedId: aiConnection === aiConnectionModes.grokCli ? 'grok-oauth' : aiConnection,
+  });
+}
+
 function openSettingsSelector() {
   openOptionSelector({
     title: 'Settings',
@@ -1614,6 +2016,18 @@ function openSettingsSelector() {
         label: `Line numbers    ${editorLineNumbers ? 'on' : 'off'}`,
         searchText: `line numbers ${editorLineNumbers ? 'on' : 'off'}`,
         onSelect: () => openSettingValueSelector('line-numbers'),
+      },
+      {
+        id: 'ai-model',
+        label: `AI model        ${currentAiModelLabel()}`,
+        searchText: `ai model ${currentAiModelLabel()}`,
+        onSelect: () => openModelSelector(),
+      },
+      {
+        id: 'ai-connection',
+        label: `AI connection   ${aiConnectionLabel(aiConnection)}`,
+        searchText: `ai connection ${aiConnectionLabel(aiConnection)}`,
+        onSelect: () => openConnectSelector(),
       },
     ],
   });
@@ -1655,21 +2069,173 @@ function openSettingValueSelector(setting) {
 
 async function changeSetting(setting, requestedValue) {
   await runTask(async () => {
-    const value = String(requestedValue ?? '').toLowerCase();
-    if (setting === 'editor' && ['builtin', 'typora'].includes(value)) {
+    const normalizedSetting = String(setting ?? '').toLowerCase();
+    const rawValue = String(requestedValue ?? '').trim();
+    const value = rawValue.toLowerCase();
+    if (normalizedSetting === 'editor' && ['builtin', 'typora'].includes(value)) {
       defaultEditor = value;
-    } else if (setting === 'keymap' && ['simple', 'vim'].includes(value)) {
+    } else if (normalizedSetting === 'keymap' && ['simple', 'vim'].includes(value)) {
       editorKeymap = value;
-    } else if (setting === 'line-numbers' && ['on', 'off'].includes(value)) {
+    } else if (normalizedSetting === 'line-numbers' && ['on', 'off'].includes(value)) {
       editorLineNumbers = value === 'on';
+    } else if (['model', 'ai-model'].includes(normalizedSetting) && rawValue) {
+      const allowed = await validateRequestedAiModel(rawValue);
+      if (!allowed) return;
+      aiModel = rawValue;
+    } else if (['connection', 'ai-connection'].includes(normalizedSetting)) {
+      if (!['api-key', 'grok-cli'].includes(value)) {
+        throw new BlogError('AI connection must be api-key or grok-cli.');
+      }
+      aiConnection = normalizeAiConnection(value);
+      if (aiConnection === aiConnectionModes.grokCli) {
+        await refreshGrokCliDiagnostics({ notify: true });
+      }
     } else {
       throw new BlogError(
-        '设置格式：/settings editor builtin|typora、/settings keymap simple|vim、/settings line-numbers on|off',
+        '设置格式：/settings editor builtin|typora、/settings keymap simple|vim、/settings line-numbers on|off、/settings model <id>、/settings connection api-key|grok-cli',
       );
     }
 
+    await repairAiModelPreference({ notify: true });
     await savePreferences();
-    log(`Setting ${setting} changed to ${value}.`);
+    updateActiveAssistantConnectionStatus();
+    log(`Setting ${normalizedSetting} changed to ${rawValue || value}.`);
+  });
+}
+
+async function changeAiModel(requestedModel) {
+  const model = String(requestedModel ?? '').trim();
+  if (!model) {
+    log('Use /models <model-id>, or run /models to choose from the list.');
+    render();
+    return;
+  }
+
+  await saveAiModel(model);
+}
+
+async function saveAiModel(model) {
+  await runTask(async () => {
+    const nextModel = String(model ?? '').trim();
+    const allowed = await validateRequestedAiModel(nextModel);
+    if (!allowed) return;
+
+    aiModel = nextModel;
+    await repairAiModelPreference({ notify: true });
+    await savePreferences();
+    updateActiveAssistantConnectionStatus();
+    log(`AI model set to ${currentAiModelLabel()}.`);
+  });
+}
+
+async function validateRequestedAiModel(model) {
+  const requestedModel = String(model ?? '').trim();
+  if (aiConnection !== aiConnectionModes.grokCli || !requestedModel) return true;
+
+  await refreshGrokCliDiagnostics({ notify: false });
+  const models = grokCliModels.length
+    ? grokCliModels
+    : await listKnownGrokModels({
+        connection: aiConnection,
+        selectedModel: '',
+      });
+  const availableIds = new Set(models.map((item) => item.id));
+  if (availableIds.has(requestedModel)) return true;
+
+  if (requestedModel === defaultApiModel) {
+    log(`${defaultApiModel} requires XAI_API_KEY. Grok browser login cannot use it.`);
+  } else {
+    log(`${requestedModel} is not available through Grok CLI login. Run /models to choose one.`);
+  }
+  return false;
+}
+
+async function refreshGrokCliDiagnostics({ notify = false } = {}) {
+  try {
+    const result = await refreshGrokCliModels();
+    grokCliDefaultModel = result.defaultModel;
+    grokCliModels = result.models;
+    updateActiveAssistantConnectionStatus();
+    if (notify) {
+      const modelList = result.models.map((model) => model.id).join(', ') || 'none';
+      log(
+        `Grok CLI models: ${modelList}. ${defaultApiModel} requires XAI_API_KEY; browser login cannot use it.`,
+      );
+    }
+    return result;
+  } catch (error) {
+    if (notify) {
+      log(`Could not refresh Grok CLI models: ${error?.message ?? error}`);
+    }
+    return {
+      defaultModel: grokCliDefaultModel,
+      models: grokCliModels,
+      raw: '',
+    };
+  }
+}
+
+async function connectXaiApiKey() {
+  await runTask(async () => {
+    aiConnection = aiConnectionModes.apiKey;
+    await savePreferences();
+    updateActiveAssistantConnectionStatus();
+    log(
+      process.env.XAI_API_KEY
+        ? 'AI connection set to XAI_API_KEY.'
+        : 'AI connection set to XAI_API_KEY, but the environment variable is missing.',
+    );
+  });
+}
+
+async function connectGrokCli({ deviceAuth = false } = {}) {
+  busy = true;
+  render();
+  suspendTerminalForInteractiveProcess();
+
+  try {
+    console.log(deviceAuth ? 'Starting Grok device-code login...' : 'Starting Grok browser login...');
+    const code = await waitForChildProcess(runGrokLogin({ deviceAuth }));
+    if (code !== 0) {
+      log(`Grok login exited with code ${code}.`);
+      return;
+    }
+
+    aiConnection = aiConnectionModes.grokCli;
+    await refreshGrokCliDiagnostics({ notify: true });
+    await repairAiModelPreference({ notify: true });
+    await savePreferences();
+    updateActiveAssistantConnectionStatus();
+    log('AI connection set to Grok CLI login.');
+  } catch (error) {
+    log(`Grok login failed: ${error?.message ?? error}`);
+  } finally {
+    busy = false;
+    resumeTerminalAfterInteractiveProcess();
+  }
+}
+
+function waitForChildProcess(child) {
+  return new Promise((resolve, reject) => {
+    child.on('error', reject);
+    child.on('close', (code) => resolve(code ?? 0));
+  });
+}
+
+function currentAiModelLabel() {
+  if (aiConnection === aiConnectionModes.grokCli && !aiModel) {
+    return grokCliDefaultModel || 'CLI default';
+  }
+  const model = normalizeAiModel(aiModel, aiConnection);
+  return model || 'CLI default';
+}
+
+function updateActiveAssistantConnectionStatus() {
+  if (!editor?.assistant) return;
+  editor.assistant.status = assistantConnectionStatus({
+    cliDefaultModel: grokCliDefaultModel,
+    connection: aiConnection,
+    model: aiModel,
   });
 }
 
@@ -1722,6 +2288,10 @@ async function loadPreferences() {
     if (typeof config.editorLineNumbers === 'boolean') {
       editorLineNumbers = config.editorLineNumbers;
     }
+    aiConnection = normalizeAiConnection(config.aiConnection);
+    if (typeof config.aiModel === 'string') {
+      aiModel = config.aiModel.trim();
+    }
   } catch (error) {
     if (error?.code !== 'ENOENT') {
       log('Settings could not be read. Using defaults.');
@@ -1730,7 +2300,32 @@ async function loadPreferences() {
     defaultEditor = 'builtin';
     editorKeymap = 'simple';
     editorLineNumbers = false;
+    aiConnection = aiConnectionModes.apiKey;
+    aiModel = '';
   }
+}
+
+async function repairAiModelPreference({ persist = false, notify = false } = {}) {
+  const previousModel = aiModel;
+  const repaired = await repairAiModelForConnection({
+    connection: aiConnection,
+    model: aiModel,
+  });
+  if (!repaired.changed) return false;
+
+  aiModel = repaired.model;
+  if (persist) {
+    await savePreferences();
+  }
+  updateActiveAssistantConnectionStatus();
+  if (notify && previousModel) {
+    if (previousModel === defaultApiModel) {
+      log(`${defaultApiModel} requires XAI_API_KEY. Grok browser login cannot use it.`);
+    } else {
+      log(`Grok CLI does not support ${previousModel}. Using CLI default.`);
+    }
+  }
+  return true;
 }
 
 async function savePreferences() {
@@ -1743,6 +2338,8 @@ async function savePreferences() {
         defaultEditor,
         editorKeymap,
         editorLineNumbers,
+        aiConnection,
+        aiModel,
       },
       null,
       2,
@@ -1783,6 +2380,24 @@ function setupTerminal() {
   process.once('exit', restoreTerminal);
   process.once('SIGTERM', () => void exitAdmin());
   process.once('SIGHUP', () => void exitAdmin());
+}
+
+function suspendTerminalForInteractiveProcess() {
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(false);
+    process.stdin.pause();
+  }
+  restoreTerminal();
+}
+
+function resumeTerminalAfterInteractiveProcess() {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return;
+
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  terminalReady = true;
+  process.stdout.write(`\x1b[?1049h\x1b[?7h\x1b[?25h${cursorColorSequence()}`);
+  render();
 }
 
 function scheduleResizeRender() {
@@ -2327,7 +2942,16 @@ function renderEditor(lines, styles, width, height) {
   }
 
   const contentCol = 2;
-  const contentWidth = Math.max(1, width - contentCol);
+  const showAssistantSidePanel =
+    isAssistantEnabled() &&
+    width >= assistantSidePanelMinTerminalWidth &&
+    height >= 12;
+  const assistantWidth = showAssistantSidePanel
+    ? clamp(Math.floor(width * 0.34), assistantPanelMinWidth, assistantPanelMaxWidth)
+    : 0;
+  const gapWidth = showAssistantSidePanel ? 2 : 0;
+  const contentWidth = Math.max(1, width - contentCol - assistantWidth - gapWidth);
+  const assistantColumn = Math.max(1, width - assistantWidth + 1);
   const header = `Edit ${editor.row.path}  ${editor.keymap}${isEditorDirty() ? '  [+]' : ''}`;
   put(lines, styles, 1, contentCol, clipDisplayWidth(header, contentWidth), 'accent');
   put(lines, styles, 2, contentCol, '─'.repeat(contentWidth), 'border');
@@ -2354,6 +2978,15 @@ function renderEditor(lines, styles, width, height) {
   const prompt = editorPromptText();
   put(lines, styles, height, 1, clipDisplayWidth(prompt, width), 'normal');
 
+  if (showAssistantSidePanel) {
+    renderAssistantPanel(lines, styles, assistantColumn, 1, assistantWidth, height);
+    if (isAssistantFocused()) return;
+  } else if (isAssistantFocused()) {
+    dimStyles(styles);
+    renderAssistantOverlay(lines, styles, width, height);
+    return;
+  }
+
   if (editor.promptMode) {
     cursorTarget = {
       column: clamp(displayWidth(prompt) + 1, 1, width),
@@ -2371,7 +3004,7 @@ function renderEditor(lines, styles, width, height) {
     column: clamp(
       contentCol + displayWidth(cursorLine?.prefix ?? '') + displayWidth(beforeCursor),
       1,
-      width,
+      Math.max(1, contentWidth + contentCol - 1),
     ),
     row: clamp(cursorRow, 3, Math.max(3, height - 2)),
   };
@@ -2393,6 +3026,190 @@ function renderEditorTiny(lines, styles, width, height) {
   }
   put(lines, styles, height, 1, 'buffer preserved', 'muted');
   cursorTarget = { column: 1, row: height };
+}
+
+function renderAssistantOverlay(lines, styles, width, height) {
+  const panelWidth =
+    width <= 82 ? width : Math.min(78, Math.max(assistantPanelMinWidth, width - 4));
+  const panelHeight = Math.max(6, height - 2);
+  const startCol = Math.max(1, Math.floor((width - panelWidth) / 2) + 1);
+  renderAssistantPanel(lines, styles, startCol, 2, panelWidth, panelHeight);
+}
+
+function renderAssistantPanel(lines, styles, startCol, startRow, panelWidth, panelHeight) {
+  if (!editor?.assistant) return;
+
+  const assistant = editor.assistant;
+  const textCol = startCol + 3;
+  const innerWidth = Math.max(1, panelWidth - 4);
+  const rightLabel = assistant.focused ? 'Esc' : '^A';
+  const top = startRow;
+  const bottom = startRow + panelHeight - 1;
+  const statusRow = bottom - 2;
+  const inputRow = bottom - 1;
+  const controlsRow = bottom;
+  const contentTop = top + 3;
+  const contentRows = Math.max(0, statusRow - contentTop - 1);
+
+  fillRect(lines, styles, startRow, startCol, panelWidth, panelHeight, 'surface:normal');
+  for (let row = top; row <= bottom; row += 1) {
+    put(lines, styles, row, startCol, '▌', 'surface:accent');
+  }
+
+  const action = currentAssistantAction();
+  put(
+    lines,
+    styles,
+    top,
+    textCol,
+    clipDisplayWidth(`${action.label} · ${currentAiModelLabel()}`, innerWidth),
+    'surface:accent',
+  );
+  put(
+    lines,
+    styles,
+    top,
+    Math.max(textCol, startCol + panelWidth - displayWidth(rightLabel) - 1),
+    rightLabel,
+    'surface:muted',
+  );
+
+  let actionCol = textCol;
+  for (const [index, item] of writingAssistantActions.entries()) {
+    const label = index === assistant.actionIndex ? item.label : item.label.toLowerCase();
+    if (actionCol + displayWidth(label) >= startCol + panelWidth - 1) break;
+    put(
+      lines,
+      styles,
+      top + 1,
+      actionCol,
+      label,
+      index === assistant.actionIndex ? 'surface:accent' : 'surface:muted',
+    );
+    actionCol += displayWidth(label) + 2;
+  }
+
+  const resultLines = getAssistantResultLines(innerWidth);
+  const maxScroll = Math.max(0, resultLines.length - contentRows);
+  assistant.scroll = clamp(assistant.scroll, 0, maxScroll);
+  const visibleLines = resultLines.slice(assistant.scroll, assistant.scroll + contentRows);
+  for (let index = 0; index < contentRows; index += 1) {
+    const item = visibleLines[index];
+    if (!item) continue;
+    put(lines, styles, contentTop + index, textCol, item.text, `surface:${item.style}`);
+  }
+
+  const status =
+    assistant.status ||
+    assistantConnectionStatus({
+      cliDefaultModel: grokCliDefaultModel,
+      connection: aiConnection,
+      model: aiModel,
+    });
+  put(
+    lines,
+    styles,
+    statusRow,
+    textCol,
+    clipDisplayWidth(status, innerWidth),
+    assistant.status ? 'surface:muted' : 'surface:faint',
+  );
+
+  const inputWidth = Math.max(1, innerWidth - 2);
+  const visibleInput = startEllipsis(assistant.input, inputWidth);
+  const prompt = `› ${visibleInput}`;
+  put(
+    lines,
+    styles,
+    inputRow,
+    textCol,
+    clipDisplayWidth(prompt || '› ', innerWidth),
+    assistant.focused ? 'surface:strong' : 'surface:muted',
+  );
+
+  const footer = assistant.focused
+    ? 'Enter send · arrows move · ^R replace'
+    : '^A focus';
+  put(
+    lines,
+    styles,
+    controlsRow,
+    textCol,
+    clipDisplayWidth(footer, innerWidth),
+    'surface:faint',
+  );
+
+  if (assistant.focused) {
+    cursorTarget = {
+      column: clamp(textCol + 2 + displayWidth(visibleInput), textCol, startCol + panelWidth - 2),
+      row: inputRow,
+    };
+  }
+}
+
+function getAssistantResultLines(width) {
+  if (!editor?.assistant) return [];
+
+  const assistant = editor.assistant;
+  if (assistant.resultWidth === width && assistant.resultLines.length) {
+    return assistant.resultLines;
+  }
+
+  const lines = [];
+  const push = (text = '', style = 'normal') => {
+    if (!text) {
+      lines.push({ style, text: '' });
+      return;
+    }
+    for (const chunk of wrapLine(text, width)) {
+      lines.push({ style, text: chunk });
+    }
+  };
+  const pushBlock = (text = '', style = 'normal') => {
+    for (const line of String(text).split(/\r?\n/)) {
+      push(line, style);
+    }
+  };
+
+  if (assistant.loading) {
+    push('Asking Grok...', 'muted');
+  } else if (!assistant.result) {
+    push('Ask, polish, continue, outline, or metadata.', 'muted');
+    push('Type and press Enter.', 'faint');
+  } else {
+    const result = assistant.result;
+    push(getWritingAssistantAction(result.actionId).label, 'accent');
+    push('', 'normal');
+    pushBlock(result.reply || 'No response text.', 'normal');
+
+    if (result.notes.length) {
+      push('', 'normal');
+      push('Notes', 'accent');
+      for (const note of result.notes) push(`- ${note}`, 'muted');
+    }
+
+    if (result.titleSuggestions.length) {
+      push('', 'normal');
+      push('Titles', 'accent');
+      for (const title of result.titleSuggestions) push(`- ${title}`, 'muted');
+    }
+
+    if (result.descriptionSuggestion) {
+      push('', 'normal');
+      push('Description', 'accent');
+      push(result.descriptionSuggestion, 'muted');
+    }
+
+    if (result.replacementBody) {
+      push('', 'normal');
+      push('Replacement Preview', 'accent');
+      pushBlock(result.replacementBody, 'normal');
+    }
+  }
+
+  assistant.resultWidth = width;
+  assistant.resultLines = lines.length ? lines : [{ style: 'muted', text: 'No assistant output.' }];
+  return assistant.resultLines;
 }
 
 function layoutEditorBuffer(width) {
@@ -2499,10 +3316,15 @@ function editorFooterStatus() {
 
   const dirty = isEditorDirty() ? 'modified' : 'saved';
   const position = `${editor.cursor.line + 1}:${editor.cursor.column + 1}`;
+  const assistantHint = isAssistantEnabled()
+    ? isAssistantFocused()
+      ? '  AI focused'
+      : '  ^A AI'
+    : '';
   if (editor.keymap === 'vim') {
-    return `${editor.vimMode.toUpperCase()}  ${dirty}  ${position}  i/a/o/O insert  :w save  :q exit  / find`;
+    return `${editor.vimMode.toUpperCase()}  ${dirty}  ${position}${assistantHint}  i/a/o/O insert  :w save  :q exit  / find`;
   }
-  return `${dirty}  ${position}  ^S save  ^F find  ^Z undo  ^Y redo  Esc exit`;
+  return `${dirty}  ${position}${assistantHint}  ^S save  ^F find  ^Z undo  ^Y redo  Esc exit`;
 }
 
 function editorPromptText() {

@@ -44,14 +44,28 @@ myblog
 - `/publish [YYYYMMDD]`：选择草稿发布，或直接发布指定日期草稿；自动整理 frontmatter、图片并运行构建检查。
 - `/sync [提交信息]`：运行构建检查，提交改动并推送到 GitHub。
 - `/theme [light|dark|diablo]`：打开主题选择弹层，或直接切换主题。
-- `/settings`：打开设置弹层。也可以直接设置 `editor builtin|typora`、`keymap simple|vim`、`line-numbers on|off`。
+- `/models`：选择 Grok 写作模型，也可以用 `/models <model-id>` 直接设置；`grok-4.3` 仅适用于 `XAI_API_KEY` 连接。
+- `/connect`：选择 `XAI_API_KEY` 或 Grok CLI 浏览器登录连接方式。
+- `/settings`：打开设置弹层。也可以直接设置 `editor builtin|typora`、`keymap simple|vim`、`line-numbers on|off`、`model <id>`、`connection api-key|grok-cli`。
 - `/logs`、`/help`、`/quit`：查看操作记录、查看帮助或退出后台。
 
-首页默认只显示独立输入框。输入 `/` 或关键词时会出现实时筛选后的紧凑候选；使用 `↑/↓` 或 `j/k` 移动，按 `Enter` 执行，按 `Esc` 关闭。`/theme`、`/publish` 和 `/settings` 会继续打开可搜索的二级选择弹层。首页输入 `quit` 也可以退出。
+首页默认只显示独立输入框。输入 `/` 或关键词时会出现实时筛选后的紧凑候选；使用 `↑/↓` 或 `j/k` 移动，按 `Enter` 执行，按 `Esc` 关闭。`/theme`、`/publish`、`/models`、`/connect` 和 `/settings` 会继续打开可搜索的二级选择弹层。首页输入 `quit` 也可以退出。
 
 在 `/posts` 页面中，按 `Enter` 直接在后台阅读选中的草稿或文章，按 `e` 使用默认编辑器，按 `i` 强制使用内置编辑器，按 `o` 强制使用 Typora，按 `t` 切换本地回收站。阅读页也支持 `e/i/o`。列表只显示状态、日期和标题，不显示文件路径；拖动终端窗口时，较长的中英文标题会按可用宽度自动换行。删除内容时需要连续按两次 `d`，文件会移动到 `.blog-trash/`，不会立刻抹掉。
 
 内置编辑器会显示完整 Markdown 或 MDX 原文，包括 frontmatter，并按窗口宽度自动换行。默认使用简洁模式：直接输入文字，使用方向键移动，按 `Ctrl+S` 保存、`Ctrl+F` 查找、`Ctrl+Z` 撤销、`Ctrl+Y` 重做、`Esc` 退出。存在未保存内容时，会先询问保存、丢弃或取消。
+
+只要进入内置编辑器，右侧都会显示 Grok 写作助手；包括 `/write`、文章列表按 `i`、以及默认编辑器为 `builtin` 时按 `e` 打开的内容。Typora 模式保持原来的外部打开行为，不显示助手。
+
+助手支持两种连接方式。可以在 shell 中设置 xAI API key，并通过 `/connect` 选择 `XAI_API_KEY`：
+
+```bash
+export XAI_API_KEY="your_xai_api_key"
+```
+
+也可以通过 `/connect` 选择 `Grok browser login` 或 `Grok device code`，后台会临时交给官方 `grok login` 完成登录；登录完成后会运行 `grok models` 诊断可用模型。博客后台不会读取或保存 Grok CLI 的 token。API key 模式默认模型为 `grok-4.3`，也可以用 `XAI_MODEL` 临时指定；`/models` 或 Settings 里的 `AI model` 会把模型选择保存到 `~/.config/myblog/config.json`。Grok CLI 登录模式只使用 `grok models` 返回的模型；如果保存的 API 模型不适用于 CLI，会自动回到 Grok CLI 默认模型，并提示 `grok-4.3` 需要 `XAI_API_KEY`。
+
+使用 `Ctrl+A` 在正文和助手输入之间切换；助手聚焦时，`←/→` 切换 `Ask / Polish / Continue / Outline / Metadata`，`Enter` 发送请求，`↑/↓` 滚动结果，`Esc` 回到正文。`Polish` 和 `Continue` 的结果可以用 `Ctrl+R` 确认替换正文；替换时会保留 frontmatter，并在同目录生成 `.agent-backup-YYYYMMDD-HHMMSS.md` 备份。为了避免覆盖未保存内容，发送 AI 请求前需要先 `Ctrl+S` 保存文件。
 
 在 `/settings` 中切换到 Vim 模式后，内置编辑器会以 Normal 模式打开。支持 `h/j/k/l`、`0/$`、`w/b`、`gg/G`、`i/a/o/O`、`x`、`dd`、`u`、`Ctrl+R`、`/`、`n/N`，以及 `:w`、`:q`、`:wq`、`:q!`。Insert 模式中按 `Esc` 返回 Normal 模式。
 
