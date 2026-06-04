@@ -1545,6 +1545,13 @@ async function submitAssistantRequest() {
   if (aiConnection === aiConnectionModes.grokCli) {
     await refreshGrokCliDiagnostics({ notify: false });
   }
+  if (aiModel === defaultApiModel && !process.env.XAI_API_KEY) {
+    assistant.status = 'grok-4.3 requires XAI_API_KEY (export it or switch connection).';
+    assistant.loading = false;
+    busy = false;
+    render();
+    return;
+  }
   await repairAiModelPreference({ persist: true });
   assistant.loading = true;
   assistant.status = `Asking Grok for ${action.label.toLowerCase()}...`;
@@ -2142,11 +2149,12 @@ async function validateRequestedAiModel(model) {
   const availableIds = new Set(models.map((item) => item.id));
   if (availableIds.has(requestedModel)) return true;
 
+  // grok-4.3 is now visible in CLI mode too; runtime will require XAI_API_KEY
   if (requestedModel === defaultApiModel) {
-    log(`${defaultApiModel} requires XAI_API_KEY. Grok browser login cannot use it.`);
-  } else {
-    log(`${requestedModel} is not available through Grok CLI login. Run /models to choose one.`);
+    return true; // allow selection; actual call will fail without key
   }
+
+  log(`${requestedModel} is not available through Grok CLI login. Run /models to choose one.`);
   return false;
 }
 
@@ -2159,7 +2167,7 @@ async function refreshGrokCliDiagnostics({ notify = false } = {}) {
     if (notify) {
       const modelList = result.models.map((model) => model.id).join(', ') || 'none';
       log(
-        `Grok CLI models: ${modelList}. ${defaultApiModel} requires XAI_API_KEY; browser login cannot use it.`,
+        `Grok CLI models: ${modelList}. ${defaultApiModel} is available but requires XAI_API_KEY at runtime.`,
       );
     }
     return result;

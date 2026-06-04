@@ -144,10 +144,10 @@ export async function listKnownGrokModels({ connection, selectedModel } = {}) {
     if (!known.size) {
       add('grok-build', 'Grok Build', 'Grok CLI default');
     }
-  } else {
-    add(selectedModel);
-    add(defaultApiModel, 'Grok 4.3', 'xAI Responses API default');
   }
+  // Always expose grok-4.3 (API-only model) so users can select it in any mode
+  add(selectedModel);
+  add(defaultApiModel, 'Grok 4.3', 'xAI Responses API (requires XAI_API_KEY)');
 
   return [...known.values()];
 }

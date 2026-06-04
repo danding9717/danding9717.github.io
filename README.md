@@ -1,6 +1,6 @@
 # Dan Ding
 
-一个基于 Astro 的极简个人博客，适合长期写作、个人随笔、技术记录和阅读笔记。内容使用 Markdown / MDX 管理，构建结果是静态页面，适合部署到 GitHub Pages。
+一个基于 Astro 的极简个人博客，适合长期写作、个人随笔、技术记录和阅读笔记。内容使用 Markdown/MDX 管理，构建结果为静态页面，适合部署到 GitHub Pages。
 
 ## 本地开发
 
@@ -19,7 +19,7 @@ npm run preview
 
 ## 写文章
 
-这个博客的日常写作入口是 `src/content/drafts/`。你可以直接用 Obsidian 或 Typora 打开这个目录写作；发布脚本会负责补全 frontmatter、整理图片、移动到正式文章目录。
+日常写作入口为 `src/content/drafts/`。可直接用 Obsidian 或 Typora 在此目录写作；发布脚本会自动补全 frontmatter、整理图片并移动至正式文章目录。
 
 ### 本地写作后台（推荐）
 
@@ -29,13 +29,13 @@ npm run preview
 npm run admin:install
 ```
 
-之后可以在任意目录打开写作后台：
+安装后可在任意目录启动写作后台：
 
 ```bash
 myblog
 ```
 
-后台命令：
+常用后台命令：
 
 - `/home`：返回首页。
 - `/write [YYYYMMDD]`：创建或打开今天或指定日期的 Markdown，并用默认编辑器打开。同一天已有内容时直接复用。
@@ -57,7 +57,7 @@ myblog
 
 只要进入内置编辑器，右侧都会显示 Grok 写作助手；包括 `/write`、文章列表按 `i`、以及默认编辑器为 `builtin` 时按 `e` 打开的内容。Typora 模式保持原来的外部打开行为，不显示助手。
 
-助手支持两种连接方式。可以在 shell 中设置 xAI API key，并通过 `/connect` 选择 `XAI_API_KEY`：
+助手支持两种连接方式。可在 shell 中设置 xAI API key，并通过 `/connect` 选择 `XAI_API_KEY`：
 
 ```bash
 export XAI_API_KEY="your_xai_api_key"
@@ -139,7 +139,7 @@ draft: false
 
 ## GitHub Pages 部署
 
-项目按 GitHub Pages 用户主页配置。确认 `astro.config.mjs` 中的 `site` 为 `https://danding9717.github.io`，并在仓库 Settings -> Pages 中将 Source 设为 GitHub Actions。推送到 `main` 后，工作流会自动构建并发布到：
+项目按 GitHub Pages 用户主页配置。确认 `astro.config.mjs` 中 `site` 为 `https://danding9717.github.io`，并在仓库 Settings → Pages 将 Source 设为 GitHub Actions。推送到 `main` 后，工作流自动构建并发布到：
 
 ```text
 https://danding9717.github.io/
@@ -151,4 +151,4 @@ https://danding9717.github.io/
 base: '/personal-blog',
 ```
 
-并相应调整站内链接或用 Astro 的 base-aware 路径策略。
+并相应调整站内链接或使用 Astro 的 base-aware 路径策略。
