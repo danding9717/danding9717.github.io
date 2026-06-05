@@ -23,26 +23,49 @@ import {
   aiConnectionModes,
   assistantConnectionStatus,
   backupAndReplaceMarkdownBody,
-  canReplaceWithAction,
+  backupAndWriteMarkdownContent,
   defaultApiModel,
+  defaultMockModel,
+  defaultOpenAiModel,
+  getWritingAssistantActionByCommand,
   getWritingAssistantAction,
+  hasApiKeyConnection,
+  hasOpenAiApiKey,
+  hasXaiApiKey,
   listKnownGrokModels,
   normalizeAiConnection,
   normalizeAiModel,
   repairAiModelForConnection,
-  requestWritingAssistance,
+  requestWritingAssistanceStream,
   refreshGrokCliModels,
   runGrokLogin,
   writingAssistantActions,
 } from './grok-writing-agent.mjs';
+import { autosavePathFor, exportPathFor } from './writing-agent/storage.mjs';
 
 const onlineBlogUrl = 'https://danding9717.github.io/';
 const maxLogLines = 12;
 const themeNames = ['light', 'dark', 'diablo'];
 const commandSelectionHelp = '↑/↓ select  Enter run  Esc close';
+const editorFilePanelMinWidth = 22;
+const editorFilePanelMaxWidth = 34;
+const editorThreeColumnMinTerminalWidth = 132;
 const assistantPanelMinWidth = 34;
 const assistantPanelMaxWidth = 48;
 const assistantSidePanelMinTerminalWidth = 100;
+const editorCommands = [
+  { id: 'idea', label: 'Generate Idea' },
+  { id: 'outline', label: 'Generate Outline' },
+  { id: 'draft', label: 'Write Draft' },
+  { id: 'rewrite', label: 'Rewrite Selection' },
+  { id: 'polish', label: 'Polish Selection' },
+  { id: 'expand', label: 'Expand Selection' },
+  { id: 'compress', label: 'Compress Selection' },
+  { id: 'title', label: 'Generate Titles' },
+  { id: 'critic', label: 'Critique Article' },
+  { id: 'save', label: 'Save File' },
+  { id: 'export', label: 'Export Markdown' },
+];
 const commands = [
   { name: '/home', label: 'Home', help: 'Return to the dashboard' },
   { name: '/write', label: 'Write', help: 'Open today draft, or use /write YYYYMMDD' },
@@ -51,8 +74,8 @@ const commands = [
   { name: '/publish', label: 'Publish', help: 'Choose a draft to publish, optional date allowed' },
   { name: '/sync', label: 'Sync', help: 'Build, commit, and push current changes' },
   { name: '/theme', label: 'Theme', help: 'Choose theme, or use /theme light|dark|diablo' },
-  { name: '/models', label: 'Models', help: 'Choose the Grok writing model' },
-  { name: '/connect', label: 'Connect', help: 'Choose API key or Grok browser login' },
+  { name: '/models', label: 'Models', help: 'Choose the AI writing model' },
+  { name: '/connect', label: 'Connect', help: 'Choose Mock, API key, or Grok browser login' },
   { name: '/settings', label: 'Settings', help: 'Choose editor, keymap, model, and connection' },
   { name: '/logs', label: 'Logs', help: 'Show recent activity' },
   { name: '/help', label: 'Help', help: 'Show command help' },
@@ -150,6 +173,7 @@ let themeName = 'light';
 let defaultEditor = 'builtin';
 let editorKeymap = 'simple';
 let editorLineNumbers = false;
+let autoSaveEnabled = true;
 let aiConnection = aiConnectionModes.apiKey;
 let aiModel = '';
 let grokCliDefaultModel = '';
@@ -161,6 +185,8 @@ let readerPrefixTimer = null;
 let terminalReady = false;
 let cursorTarget = { column: 1, row: 1 };
 let homeCommandInputRect = null;
+let editorAutosaveTimer = null;
+let assistantRequestSeq = 0;
 
 if (process.argv.includes('--check')) {
   rows = await listNotes();
@@ -185,7 +211,7 @@ process.stdin.on('keypress', async (value, key = {}) => {
     return;
   }
 
-  if (busy) return;
+  if (busy && !(view === 'editor' && editor?.assistant?.loading)) return;
 
   await handleKey(value, key);
 });
@@ -555,6 +581,58 @@ async function handleEditorKeys(value, key) {
     return;
   }
 
+  if (key.ctrl && key.name === 'n') {
+    await createAndOpenNewDraft();
+    return;
+  }
+
+  if (key.ctrl && key.name === 's') {
+    await saveEditor();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'o') {
+    await openEditorFileSelector();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'k') {
+    openEditorCommandPalette();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'q') {
+    await requestEditorClose();
+    return;
+  }
+
+  if (key.ctrl && key.name === 'x' && editor.assistant?.loading) {
+    cancelAssistantRequest();
+    return;
+  }
+
+  if (key.ctrl && (key.name === 'return' || key.name === 'enter')) {
+    await submitAssistantRequest();
+    return;
+  }
+
+  if (editor.assistant?.loading) return;
+
+  if (!isAssistantFocused() && key.ctrl && key.name === 'r') {
+    await runAssistantAction('rewrite');
+    return;
+  }
+
+  if (!isAssistantFocused() && key.ctrl && key.name === 'p') {
+    await runAssistantAction('polish');
+    return;
+  }
+
+  if (!isAssistantFocused() && key.ctrl && key.name === 't') {
+    await runAssistantAction('title');
+    return;
+  }
+
   if (isAssistantFocused()) {
     await handleAssistantKeys(value, key);
     return;
@@ -562,11 +640,6 @@ async function handleEditorKeys(value, key) {
 
   if (editor.promptMode) {
     await handleEditorPromptKeys(value, key);
-    return;
-  }
-
-  if (key.ctrl && key.name === 's') {
-    await saveEditor();
     return;
   }
 
@@ -581,6 +654,11 @@ async function handleAssistantKeys(value, key) {
   if (!editor?.assistant) return;
 
   const assistant = editor.assistant;
+
+  if (key.ctrl && key.name === 'x' && assistant.loading) {
+    cancelAssistantRequest();
+    return;
+  }
 
   if (key.name === 'escape') {
     assistant.focused = false;
@@ -909,6 +987,7 @@ function undoEditor() {
   editor.lines = snapshot.lines;
   editor.cursor = snapshot.cursor;
   editor.status = 'Undo.';
+  scheduleEditorAutosave();
   render();
 }
 
@@ -923,6 +1002,7 @@ function redoEditor() {
   editor.lines = snapshot.lines;
   editor.cursor = snapshot.cursor;
   editor.status = 'Redo.';
+  scheduleEditorAutosave();
   render();
 }
 
@@ -951,6 +1031,7 @@ function insertEditorText(value) {
   }
 
   editor.status = '';
+  scheduleEditorAutosave();
   render();
 }
 
@@ -965,6 +1046,7 @@ function splitEditorLine() {
   editor.cursor.line += 1;
   editor.cursor.column = 0;
   editor.status = '';
+  scheduleEditorAutosave();
   render();
 }
 
@@ -989,6 +1071,7 @@ function deleteEditorBackward() {
   }
 
   editor.status = '';
+  scheduleEditorAutosave();
   render();
 }
 
@@ -1012,6 +1095,7 @@ function deleteEditorForward() {
   }
 
   editor.status = '';
+  scheduleEditorAutosave();
   render();
 }
 
@@ -1030,6 +1114,7 @@ function deleteEditorLine() {
     Array.from(editor.lines[editor.cursor.line] ?? '').length,
   );
   editor.status = '';
+  scheduleEditorAutosave();
   render();
 }
 
@@ -1042,6 +1127,7 @@ function openEditorLine(offset) {
   editor.cursor = { column: 0, line: target };
   editor.vimMode = 'insert';
   editor.status = '';
+  scheduleEditorAutosave();
   render();
 }
 
@@ -1066,7 +1152,7 @@ function moveEditorCursorHorizontal(offset, wrap = true) {
 function moveEditorCursorVertical(offset) {
   if (!editor) return;
 
-  const contentWidth = Math.max(1, (process.stdout.columns || 100) - 2);
+  const contentWidth = currentEditorContentWidth();
   const layout = layoutEditorBuffer(contentWidth);
   const currentIndex = findEditorCursorVisualIndex(layout);
   const currentLine = layout[currentIndex];
@@ -1414,6 +1500,115 @@ async function openConfiguredEditor(row, requestedEditor = defaultEditor) {
   await openBuiltinEditor(row);
 }
 
+async function createAndOpenNewDraft() {
+  await runTask(async () => {
+    const result = await createDraft(compactDateForToday(), { open: false });
+    logMany(result.messages);
+    await refreshRows();
+    const row =
+      rows.find((item) => item.filePath === result.filePath) ??
+      createEditorRow(result.filePath);
+    await openBuiltinEditor(row);
+  });
+}
+
+async function openEditorFileSelector() {
+  await refreshRows();
+  const options = rows
+    .filter((row) => ['draft', 'post', 'draft?'].includes(row.status))
+    .map((row) => ({
+      active: editor?.filePath === row.filePath,
+      id: row.filePath,
+      label: `${row.status.padEnd(6, ' ')} ${row.date}  ${row.title}`,
+      searchText: `${row.status} ${row.date} ${row.title} ${row.path}`,
+      onSelect: () => switchEditorFile(row),
+    }));
+
+  openOptionSelector({
+    title: 'Open Markdown',
+    options: options.length
+      ? options
+      : [
+          {
+            id: 'none',
+            label: 'No drafts or posts found',
+            searchText: 'empty',
+            onSelect: () => render(),
+          },
+        ],
+    selectedId: editor?.filePath ?? '',
+  });
+}
+
+async function switchEditorFile(row) {
+  if (!editor) {
+    await openBuiltinEditor(row);
+    return;
+  }
+
+  if (!isEditorDirty()) {
+    await openBuiltinEditor(row);
+    return;
+  }
+
+  openOptionSelector({
+    title: 'Unsaved changes',
+    options: [
+      {
+        id: 'save-open',
+        label: 'Save and open selected file',
+        searchText: 'save open selected file',
+        onSelect: () => saveEditor({ onSaved: () => openBuiltinEditor(row) }),
+      },
+      {
+        id: 'discard-open',
+        label: 'Discard and open selected file',
+        searchText: 'discard open selected file',
+        onSelect: () => openBuiltinEditor(row),
+      },
+      {
+        id: 'cancel',
+        label: 'Cancel',
+        searchText: 'cancel',
+        onSelect: () => render(),
+      },
+    ],
+  });
+}
+
+function openEditorCommandPalette() {
+  openOptionSelector({
+    title: 'Command Palette',
+    options: editorCommands.map((command) => ({
+      id: command.id,
+      label: command.label,
+      searchText: `${command.id} ${command.label}`,
+      onSelect: () => executeEditorPaletteCommand(command.id),
+    })),
+  });
+}
+
+async function executeEditorPaletteCommand(commandId) {
+  if (commandId === 'save') {
+    await saveEditor();
+    return;
+  }
+  if (commandId === 'export') {
+    await exportCurrentMarkdown();
+    return;
+  }
+  await runAssistantAction(commandId);
+}
+
+async function runAssistantAction(actionId) {
+  if (!isAssistantEnabled()) return;
+
+  const index = writingAssistantActions.findIndex((action) => action.id === actionId);
+  if (index >= 0) editor.assistant.actionIndex = index;
+  editor.assistant.focused = true;
+  await submitAssistantRequest();
+}
+
 async function handleOpenEditorShortcut(key, row) {
   if (!row) return false;
 
@@ -1432,6 +1627,7 @@ async function openBuiltinEditor(row) {
   try {
     const rawContent = await readFile(row.filePath, 'utf8');
     const newline = rawContent.includes('\r\n') ? '\r\n' : '\n';
+    const returnView = view === 'editor' && editor?.returnView ? editor.returnView : view;
     editor = {
       commandInput: '',
       cursor: { column: 0, line: 0 },
@@ -1444,7 +1640,7 @@ async function openBuiltinEditor(row) {
       originalContent: rawContent,
       promptMode: '',
       redo: [],
-      returnView: view,
+      returnView,
       row,
       scroll: 0,
       searchQuery: '',
@@ -1465,19 +1661,82 @@ function createAssistantState() {
     actionIndex: 0,
     enabled: true,
     focused: false,
-    input: '',
-    loading: false,
-    result: null,
-    resultExpectedContent: '',
-    resultLines: [],
-    resultWidth: 0,
-    scroll: 0,
+	    input: '',
+	    loading: false,
+	    requestAbortController: null,
+	    requestId: 0,
+	    result: null,
+	    resultExpectedContent: '',
+	    resultLines: [],
+	    resultTargetRange: null,
+	    resultWidth: 0,
+	    scroll: 0,
+	    streamingText: '',
+	    telemetry: null,
     status: assistantConnectionStatus({
       cliDefaultModel: grokCliDefaultModel,
       connection: aiConnection,
       model: aiModel,
     }),
   };
+}
+
+async function executeAssistantLocalAction(actionId) {
+  if (!editor?.assistant) return;
+
+  if (actionId === 'save') {
+    await saveEditor();
+    return;
+  }
+
+  editor.assistant.result = {
+    actionId: 'help',
+    insertText: null,
+    notes: [],
+    replacementBody: null,
+    reply: [
+      '写作命令',
+      '',
+      ...writingAssistantActions.map((action) => `${action.command.padEnd(10, ' ')} ${action.help}`),
+      '',
+      '快捷键：Ctrl+K 命令面板，Ctrl+Enter/Enter 发送，Ctrl+R 应用结果，Ctrl+S 保存。',
+    ].join('\n'),
+    titleSuggestions: [],
+  };
+  editor.assistant.resultLines = [];
+  editor.assistant.resultWidth = 0;
+  editor.assistant.status = 'Help ready.';
+  render();
+}
+
+function currentAssistantTarget(action) {
+  if (!editor) return { range: null, text: '' };
+
+  if (['rewrite', 'polish', 'expand', 'compress'].includes(action.id)) {
+    const range = currentParagraphRange();
+    return {
+      range,
+      text: editor.lines.slice(range.startLine, range.endLine + 1).join(editor.newline),
+    };
+  }
+
+  return {
+    range: null,
+    text: editorContent(),
+  };
+}
+
+function currentParagraphRange() {
+  if (!editor) return { endLine: 0, startLine: 0 };
+
+  const isBlank = (line) => !String(line ?? '').trim();
+  let startLine = editor.cursor.line;
+  let endLine = editor.cursor.line;
+
+  while (startLine > 0 && !isBlank(editor.lines[startLine - 1])) startLine -= 1;
+  while (endLine < editor.lines.length - 1 && !isBlank(editor.lines[endLine + 1])) endLine += 1;
+
+  return { endLine, startLine };
 }
 
 function isAssistantEnabled() {
@@ -1525,16 +1784,22 @@ async function submitAssistantRequest() {
   if (!isAssistantEnabled()) return;
 
   const assistant = editor.assistant;
-  const action = currentAssistantAction();
-  const prompt = assistant.input.trim();
-
-  if (assistant.loading) return;
-
-  if (action.id === 'ask' && !prompt) {
-    assistant.status = 'Type a question first.';
-    render();
+  if (assistant.loading) {
+    cancelAssistantRequest();
     return;
   }
+
+  const parsedCommand = parseAssistantCommandInput(assistant.input);
+  const action = parsedCommand.action ?? currentAssistantAction();
+  if (parsedCommand.action) {
+    const index = writingAssistantActions.findIndex((item) => item.id === action.id);
+    if (index >= 0) assistant.actionIndex = index;
+  }
+  if (action.local) {
+    await executeAssistantLocalAction(action.id);
+    return;
+  }
+  const prompt = parsedCommand.prompt;
 
   if (isEditorDirty()) {
     assistant.status = 'Save the file with Ctrl+S before asking AI.';
@@ -1542,44 +1807,107 @@ async function submitAssistantRequest() {
     return;
   }
 
+  await repairAiModelPreference({ persist: true });
   if (aiConnection === aiConnectionModes.grokCli) {
     await refreshGrokCliDiagnostics({ notify: false });
   }
-  if (aiModel === defaultApiModel && !process.env.XAI_API_KEY) {
-    assistant.status = 'grok-4.3 requires XAI_API_KEY (export it or switch connection).';
+  if (
+    [aiConnectionModes.openai, aiConnectionModes.xai].includes(aiConnection) &&
+    !hasApiKeyConnection(aiConnection)
+  ) {
+    assistant.status =
+      aiConnection === aiConnectionModes.openai
+        ? 'OpenAI requires OPENAI_API_KEY. Use /connect and choose Mock for local tests.'
+        : 'grok-4.3 requires XAI_API_KEY. Use /connect and choose Mock for local tests.';
     assistant.loading = false;
     busy = false;
     render();
     return;
   }
-  await repairAiModelPreference({ persist: true });
+
+  const target = currentAssistantTarget(action);
+  const requestId = assistantRequestSeq + 1;
+  assistantRequestSeq = requestId;
+  const abortController = new AbortController();
   assistant.loading = true;
-  assistant.status = `Asking Grok for ${action.label.toLowerCase()}...`;
+  assistant.requestAbortController = abortController;
+  assistant.requestId = requestId;
+  assistant.status = `Connecting to ${currentAiModelLabel()}... Ctrl+X stops.`;
   assistant.result = null;
   assistant.resultExpectedContent = editor.originalContent;
+  assistant.resultTargetRange = target.range;
   assistant.resultLines = [];
   assistant.resultWidth = 0;
   assistant.scroll = 0;
+  assistant.streamingText = '';
+  assistant.telemetry = null;
   busy = true;
   render();
 
   try {
-    const result = await requestWritingAssistance({
+    for await (const event of requestWritingAssistanceStream({
       actionId: action.id,
       connection: aiConnection,
       draftContent: editor.originalContent,
       model: aiModel,
       projectRoot,
       prompt,
-    });
-    assistant.input = '';
-    assistant.result = result;
-    assistant.status = canReplaceWithAction(result.actionId) && result.replacementBody
-      ? 'Result ready. Ctrl+R applies replacement.'
-      : 'Result ready.';
+      signal: abortController.signal,
+      targetText: target.text,
+    })) {
+      if (assistant.requestId !== requestId) break;
+      if (event.telemetry) assistant.telemetry = event.telemetry;
+
+      if (event.type === 'start') {
+        assistant.status = `Generating with ${event.model || currentAiModelLabel()}... Ctrl+X stops.`;
+        invalidateAssistantResultCache();
+        render();
+        continue;
+      }
+
+      if (event.type === 'first_token') {
+        assistant.status = formatAssistantTelemetryStatus('First token received.', assistant.telemetry);
+        invalidateAssistantResultCache();
+        render();
+        continue;
+      }
+
+      if (event.type === 'delta') {
+        assistant.streamingText += event.text ?? '';
+        assistant.status = formatAssistantTelemetryStatus('Streaming response...', assistant.telemetry);
+        assistant.scroll = Math.max(0, getAssistantResultLines(assistant.resultWidth || 40).length - 1);
+        invalidateAssistantResultCache();
+        render();
+        continue;
+      }
+
+      if (event.type === 'usage') {
+        assistant.status = formatAssistantTelemetryStatus('Streaming response...', assistant.telemetry);
+        render();
+        continue;
+      }
+
+      if (event.type === 'result') {
+        assistant.input = '';
+        assistant.result = event.result;
+        assistant.streamingText = '';
+        assistant.status = event.result.replacementBody
+          ? formatAssistantTelemetryStatus('Result ready. Ctrl+R applies replacement.', assistant.telemetry)
+          : event.result.insertText
+            ? formatAssistantTelemetryStatus('Result ready. Ctrl+R inserts it.', assistant.telemetry)
+            : formatAssistantTelemetryStatus('Result ready.', assistant.telemetry);
+        logAssistantTelemetry(assistant.telemetry);
+        invalidateAssistantResultCache();
+        render();
+      }
+    }
   } catch (error) {
     const message = String(error?.message ?? error);
-    if (message.includes('当前模型不是 Grok CLI 可用模型')) {
+    if (abortController.signal.aborted || /cancelled|canceled|aborted/i.test(message)) {
+      assistant.status = 'Generation stopped.';
+      assistant.streamingText = '';
+      invalidateAssistantResultCache();
+    } else if (message.includes('当前模型不是 Grok CLI 可用模型')) {
       await refreshGrokCliDiagnostics({ notify: false });
       aiModel = '';
       await savePreferences();
@@ -1587,12 +1915,72 @@ async function submitAssistantRequest() {
       assistant.status = 'Current model is not available in Grok CLI. Switched to CLI default; try again.';
     } else {
       assistant.status = message;
+      if (assistant.telemetry) {
+        assistant.telemetry.error_message = message;
+        logAssistantTelemetry(assistant.telemetry);
+      }
     }
   } finally {
-    assistant.loading = false;
-    busy = false;
-    render();
+    if (assistant.requestId === requestId) {
+      assistant.loading = false;
+      assistant.requestAbortController = null;
+      busy = false;
+      invalidateAssistantResultCache();
+      render();
+    }
   }
+}
+
+function cancelAssistantRequest() {
+  if (!editor?.assistant?.loading) return;
+  editor.assistant.status = 'Stopping generation...';
+  editor.assistant.requestAbortController?.abort();
+  render();
+}
+
+function invalidateAssistantResultCache() {
+  if (!editor?.assistant) return;
+  editor.assistant.resultLines = [];
+  editor.assistant.resultWidth = 0;
+}
+
+function formatAssistantTelemetryStatus(prefix, telemetry) {
+  if (!telemetry) return prefix;
+  const parts = [];
+  if (Number.isFinite(telemetry.ttft)) parts.push(`TTFT ${telemetry.ttft}ms`);
+  if (Number.isFinite(telemetry.total_duration)) parts.push(`Total ${telemetry.total_duration}ms`);
+  const outputTokens = telemetry.output_tokens;
+  if (Number.isFinite(outputTokens)) parts.push(`Out ${outputTokens}`);
+  return parts.length ? `${prefix} ${parts.join(' · ')}` : prefix;
+}
+
+function logAssistantTelemetry(telemetry) {
+  if (!telemetry) return;
+  const total =
+    Number.isFinite(telemetry.total_duration) && telemetry.total_duration >= 0
+      ? `${telemetry.total_duration}ms`
+      : 'n/a';
+  const ttft = Number.isFinite(telemetry.ttft) && telemetry.ttft >= 0 ? `${telemetry.ttft}ms` : 'n/a';
+  const usage = [
+    Number.isFinite(telemetry.input_tokens) ? `input ${telemetry.input_tokens}` : '',
+    Number.isFinite(telemetry.output_tokens) ? `output ${telemetry.output_tokens}` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
+  log(
+    `AI telemetry: ${telemetry.provider}/${telemetry.model_name} TTFT ${ttft}, total ${total}, prompt ${telemetry.prompt_length} chars${usage ? `, ${usage}` : ''}.`,
+  );
+}
+
+function parseAssistantCommandInput(value) {
+  const text = String(value ?? '').trim();
+  if (!text.startsWith('/')) return { action: null, prompt: text };
+
+  const [command, ...rest] = text.split(/\s+/);
+  const action = getWritingAssistantActionByCommand(command);
+  return action
+    ? { action, prompt: rest.join(' ').trim() }
+    : { action: null, prompt: text };
 }
 
 async function requestAssistantReplacement() {
@@ -1600,8 +1988,8 @@ async function requestAssistantReplacement() {
 
   const assistant = editor.assistant;
   const result = assistant.result;
-  if (!result?.replacementBody || !canReplaceWithAction(result.actionId)) {
-    assistant.status = 'Current result cannot replace the body.';
+  if (!result?.replacementBody && !result?.insertText) {
+    assistant.status = 'Current result has nothing to apply.';
     render();
     return;
   }
@@ -1613,12 +2001,12 @@ async function requestAssistantReplacement() {
   }
 
   openOptionSelector({
-    title: 'Apply AI replacement',
+    title: result.replacementBody ? 'Apply AI replacement' : 'Insert AI result',
     options: [
       {
         id: 'apply',
-        label: 'Apply body replacement',
-        searchText: 'apply replace body',
+        label: result.replacementBody ? 'Apply replacement' : 'Insert at document end',
+        searchText: 'apply replace insert body result',
         onSelect: () => applyAssistantReplacement(),
       },
       {
@@ -1637,16 +2025,33 @@ async function applyAssistantReplacement() {
   await runTask(async () => {
     const assistant = editor.assistant;
     const result = assistant.result;
-    if (!result?.replacementBody) {
-      assistant.status = 'No replacement body available.';
+    if (!result?.replacementBody && !result?.insertText) {
+      assistant.status = 'No applicable AI output available.';
       return;
     }
 
-    const applied = await backupAndReplaceMarkdownBody(
-      editor.filePath,
-      assistant.resultExpectedContent,
-      result.replacementBody,
-    );
+    if (!result.replacementBody && result.insertText) {
+      insertEditorTextAtEnd(result.insertText);
+      assistant.status = 'Inserted AI result. Save when ready.';
+      return;
+    }
+
+    const isDocumentReplacement = result.target === 'document' || !assistant.resultTargetRange;
+    const applied = isDocumentReplacement
+      ? await backupAndReplaceMarkdownBody(
+          editor.filePath,
+          assistant.resultExpectedContent,
+          result.replacementBody,
+        )
+      : await backupAndWriteMarkdownContent(
+          editor.filePath,
+          assistant.resultExpectedContent,
+          replaceEditorRangeInContent(
+            assistant.resultExpectedContent,
+            assistant.resultTargetRange,
+            result.replacementBody,
+          ),
+        );
     const nextContent = applied.content;
     recordEditorHistory();
     editor.lines = nextContent.replace(/\r\n/g, '\n').split('\n');
@@ -1661,6 +2066,36 @@ async function applyAssistantReplacement() {
     if (refreshedRow) editor.row = refreshedRow;
     refreshReaderAfterEditorSave(nextContent, editor.row);
   });
+}
+
+function insertEditorTextAtEnd(text) {
+  if (!editor) return;
+
+  recordEditorHistory();
+  const insertion = String(text ?? '').trim();
+  if (!insertion) return;
+
+  const needsBlankLine = editor.lines.some((line) => line.trim()) && editor.lines.at(-1)?.trim();
+  if (needsBlankLine) {
+    editor.lines.push('', ...insertion.split(/\r?\n/));
+  } else {
+    editor.lines.push(...insertion.split(/\r?\n/));
+  }
+  editor.cursor = {
+    column: Array.from(editor.lines.at(-1) ?? '').length,
+    line: editor.lines.length - 1,
+  };
+  scheduleEditorAutosave();
+  render();
+}
+
+function replaceEditorRangeInContent(content, range, replacement) {
+  const newline = String(content).includes('\r\n') ? '\r\n' : '\n';
+  const lines = String(content).replace(/\r\n/g, '\n').split('\n');
+  const startLine = clamp(range?.startLine ?? 0, 0, Math.max(0, lines.length - 1));
+  const endLine = clamp(range?.endLine ?? startLine, startLine, Math.max(0, lines.length - 1));
+  lines.splice(startLine, endLine - startLine + 1, ...String(replacement ?? '').split(/\r?\n/));
+  return lines.join(newline);
 }
 
 function editorContent() {
@@ -1714,6 +2149,10 @@ async function finishEditorClose({ exitApplication = false } = {}) {
   const closingEditor = editor;
   if (!closingEditor) return;
 
+  if (editorAutosaveTimer) {
+    clearTimeout(editorAutosaveTimer);
+    editorAutosaveTimer = null;
+  }
   editor = null;
   await refreshRows();
   if (exitApplication) {
@@ -1783,6 +2222,41 @@ async function saveEditor({ force = false, onSaved = null } = {}) {
     editor.status = `Save failed: ${error?.message ?? error}`;
     render();
     return false;
+  }
+}
+
+async function exportCurrentMarkdown() {
+  if (!editor) return;
+
+  await runTask(async () => {
+    const exportDir = path.join(projectRoot, 'exports');
+    const exportPath = exportPathFor({ filePath: editor.filePath, projectRoot });
+    await mkdir(exportDir, { recursive: true });
+    await writeFile(exportPath, editorContent(), 'utf8');
+    editor.status = `Exported: ${path.relative(projectRoot, exportPath)}`;
+    log(editor.status);
+  });
+}
+
+function scheduleEditorAutosave() {
+  if (!editor || !autoSaveEnabled) return;
+
+  if (editorAutosaveTimer) clearTimeout(editorAutosaveTimer);
+  editorAutosaveTimer = setTimeout(() => {
+    editorAutosaveTimer = null;
+    void writeEditorAutosave();
+  }, 800);
+}
+
+async function writeEditorAutosave() {
+  if (!editor || !autoSaveEnabled) return;
+
+  try {
+    const autosavePath = autosavePathFor({ filePath: editor.filePath, projectRoot });
+    await mkdir(path.dirname(autosavePath), { recursive: true });
+    await writeFile(autosavePath, editorContent(), 'utf8');
+  } catch {
+    // Autosave should never interrupt typing.
   }
 }
 
@@ -1948,7 +2422,11 @@ async function openModelSelector() {
   const defaultLabel =
     aiConnection === aiConnectionModes.grokCli
       ? `Grok CLI default${grokCliDefaultModel ? `  ${grokCliDefaultModel}` : ''}`
-      : defaultApiModel;
+      : aiConnection === aiConnectionModes.mock
+        ? defaultMockModel
+        : aiConnection === aiConnectionModes.openai
+          ? defaultOpenAiModel
+          : defaultApiModel;
 
   openOptionSelector({
     title: 'AI model',
@@ -1973,15 +2451,30 @@ async function openModelSelector() {
 }
 
 function openConnectSelector() {
-  const hasApiKey = Boolean(process.env.XAI_API_KEY);
+  const hasOpenAiKey = hasOpenAiApiKey();
+  const hasXaiKey = hasXaiApiKey();
   openOptionSelector({
-    title: 'AI connection',
+    title: 'AI provider',
     options: [
+      {
+        active: aiConnection === aiConnectionModes.mock,
+        id: aiConnectionModes.mock,
+        label: 'Mock provider  local',
+        searchText: 'mock provider local offline test',
+        onSelect: () => connectMockProvider(),
+      },
+      {
+        active: aiConnection === aiConnectionModes.openai,
+        id: aiConnectionModes.openai,
+        label: `OpenAI API key  ${hasOpenAiKey ? 'connected' : 'missing'}`,
+        searchText: `openai api key gpt-5.5 ${hasOpenAiKey ? 'connected' : 'missing'}`,
+        onSelect: () => connectOpenAiApiKey(),
+      },
       {
         active: aiConnection === aiConnectionModes.apiKey,
         id: aiConnectionModes.apiKey,
-        label: `XAI_API_KEY  ${hasApiKey ? 'connected' : 'missing'}`,
-        searchText: `xai api key ${hasApiKey ? 'connected' : 'missing'}`,
+        label: `XAI_API_KEY  ${hasXaiKey ? 'connected' : 'missing'}`,
+        searchText: `xai api key grok-4.3 ${hasXaiKey ? 'connected' : 'missing'}`,
         onSelect: () => connectXaiApiKey(),
       },
       {
@@ -2032,9 +2525,15 @@ function openSettingsSelector() {
       },
       {
         id: 'ai-connection',
-        label: `AI connection   ${aiConnectionLabel(aiConnection)}`,
-        searchText: `ai connection ${aiConnectionLabel(aiConnection)}`,
+        label: `AI provider     ${aiConnectionLabel(aiConnection)}`,
+        searchText: `ai provider connection ${aiConnectionLabel(aiConnection)}`,
         onSelect: () => openConnectSelector(),
+      },
+      {
+        id: 'auto-save',
+        label: `Auto save       ${autoSaveEnabled ? 'on' : 'off'}`,
+        searchText: `auto save ${autoSaveEnabled ? 'on' : 'off'}`,
+        onSelect: () => openSettingValueSelector('auto-save'),
       },
     ],
   });
@@ -2056,6 +2555,11 @@ function openSettingValueSelector(setting) {
       selected: editorLineNumbers ? 'on' : 'off',
       title: 'Line numbers',
       values: ['off', 'on'],
+    },
+    'auto-save': {
+      selected: autoSaveEnabled ? 'on' : 'off',
+      title: 'Auto save',
+      values: ['on', 'off'],
     },
   };
   const definition = definitions[setting];
@@ -2085,13 +2589,15 @@ async function changeSetting(setting, requestedValue) {
       editorKeymap = value;
     } else if (normalizedSetting === 'line-numbers' && ['on', 'off'].includes(value)) {
       editorLineNumbers = value === 'on';
+    } else if (normalizedSetting === 'auto-save' && ['on', 'off'].includes(value)) {
+      autoSaveEnabled = value === 'on';
     } else if (['model', 'ai-model'].includes(normalizedSetting) && rawValue) {
       const allowed = await validateRequestedAiModel(rawValue);
       if (!allowed) return;
       aiModel = rawValue;
     } else if (['connection', 'ai-connection'].includes(normalizedSetting)) {
-      if (!['api-key', 'grok-cli'].includes(value)) {
-        throw new BlogError('AI connection must be api-key or grok-cli.');
+      if (!['mock', 'openai', 'xai', 'api-key', 'grok-cli'].includes(value)) {
+        throw new BlogError('AI provider must be mock, openai, xai/api-key, or grok-cli.');
       }
       aiConnection = normalizeAiConnection(value);
       if (aiConnection === aiConnectionModes.grokCli) {
@@ -2099,7 +2605,7 @@ async function changeSetting(setting, requestedValue) {
       }
     } else {
       throw new BlogError(
-        '设置格式：/settings editor builtin|typora、/settings keymap simple|vim、/settings line-numbers on|off、/settings model <id>、/settings connection api-key|grok-cli',
+        '设置格式：/settings editor builtin|typora、/settings keymap simple|vim、/settings line-numbers on|off、/settings auto-save on|off、/settings model <id>、/settings connection mock|openai|xai|grok-cli',
       );
     }
 
@@ -2137,7 +2643,19 @@ async function saveAiModel(model) {
 
 async function validateRequestedAiModel(model) {
   const requestedModel = String(model ?? '').trim();
-  if (aiConnection !== aiConnectionModes.grokCli || !requestedModel) return true;
+  if (!requestedModel) return true;
+
+  if (aiConnection === aiConnectionModes.openai && requestedModel === defaultApiModel) {
+    log(`${defaultApiModel} can only be used with XAI_API_KEY. OpenAI provider uses ${defaultOpenAiModel} by default.`);
+    return false;
+  }
+
+  if (aiConnection === aiConnectionModes.xai && requestedModel === defaultOpenAiModel) {
+    log(`${defaultOpenAiModel} can only be used with OpenAI API key. xAI provider uses ${defaultApiModel} by default.`);
+    return false;
+  }
+
+  if (aiConnection !== aiConnectionModes.grokCli) return true;
 
   await refreshGrokCliDiagnostics({ notify: false });
   const models = grokCliModels.length
@@ -2149,9 +2667,9 @@ async function validateRequestedAiModel(model) {
   const availableIds = new Set(models.map((item) => item.id));
   if (availableIds.has(requestedModel)) return true;
 
-  // grok-4.3 is now visible in CLI mode too; runtime will require XAI_API_KEY
-  if (requestedModel === defaultApiModel) {
-    return true; // allow selection; actual call will fail without key
+  if (requestedModel === defaultApiModel || requestedModel === defaultOpenAiModel) {
+    log(`${requestedModel} can only be used with an API key provider. Grok CLI login cannot use it.`);
+    return false;
   }
 
   log(`${requestedModel} is not available through Grok CLI login. Run /models to choose one.`);
@@ -2166,9 +2684,7 @@ async function refreshGrokCliDiagnostics({ notify = false } = {}) {
     updateActiveAssistantConnectionStatus();
     if (notify) {
       const modelList = result.models.map((model) => model.id).join(', ') || 'none';
-      log(
-        `Grok CLI models: ${modelList}. ${defaultApiModel} is available but requires XAI_API_KEY at runtime.`,
-      );
+      log(`Grok CLI models: ${modelList}. ${defaultApiModel} requires XAI_API_KEY.`);
     }
     return result;
   } catch (error) {
@@ -2186,6 +2702,7 @@ async function refreshGrokCliDiagnostics({ notify = false } = {}) {
 async function connectXaiApiKey() {
   await runTask(async () => {
     aiConnection = aiConnectionModes.apiKey;
+    await repairAiModelPreference({ notify: true });
     await savePreferences();
     updateActiveAssistantConnectionStatus();
     log(
@@ -2193,6 +2710,32 @@ async function connectXaiApiKey() {
         ? 'AI connection set to XAI_API_KEY.'
         : 'AI connection set to XAI_API_KEY, but the environment variable is missing.',
     );
+  });
+}
+
+async function connectOpenAiApiKey() {
+  await runTask(async () => {
+    aiConnection = aiConnectionModes.openai;
+    await repairAiModelPreference({ notify: true });
+    await savePreferences();
+    updateActiveAssistantConnectionStatus();
+    log(
+      process.env.OPENAI_API_KEY
+        ? 'AI connection set to OpenAI API key.'
+        : 'AI connection set to OpenAI, but OPENAI_API_KEY is missing. Create one at https://platform.openai.com/api-keys.',
+    );
+  });
+}
+
+async function connectMockProvider() {
+  await runTask(async () => {
+    aiConnection = aiConnectionModes.mock;
+    if (!aiModel || aiModel === defaultApiModel) {
+      aiModel = defaultMockModel;
+    }
+    await savePreferences();
+    updateActiveAssistantConnectionStatus();
+    log('AI provider set to Mock. Writing Agent can run offline.');
   });
 }
 
@@ -2231,6 +2774,9 @@ function waitForChildProcess(child) {
 }
 
 function currentAiModelLabel() {
+  if (aiConnection === aiConnectionModes.mock && !aiModel) {
+    return defaultMockModel;
+  }
   if (aiConnection === aiConnectionModes.grokCli && !aiModel) {
     return grokCliDefaultModel || 'CLI default';
   }
@@ -2296,9 +2842,15 @@ async function loadPreferences() {
     if (typeof config.editorLineNumbers === 'boolean') {
       editorLineNumbers = config.editorLineNumbers;
     }
-    aiConnection = normalizeAiConnection(config.aiConnection);
+    if (typeof config.autoSaveEnabled === 'boolean') {
+      autoSaveEnabled = config.autoSaveEnabled;
+    }
+    aiConnection = normalizeAiConnection(config.aiProvider ?? config.aiConnection);
     if (typeof config.aiModel === 'string') {
       aiModel = config.aiModel.trim();
+    }
+    if (process.env.AI_PROVIDER || process.env.DANTE_PROVIDER) {
+      aiConnection = normalizeAiConnection(process.env.AI_PROVIDER || process.env.DANTE_PROVIDER);
     }
   } catch (error) {
     if (error?.code !== 'ENOENT') {
@@ -2308,7 +2860,8 @@ async function loadPreferences() {
     defaultEditor = 'builtin';
     editorKeymap = 'simple';
     editorLineNumbers = false;
-    aiConnection = aiConnectionModes.apiKey;
+    autoSaveEnabled = true;
+    aiConnection = normalizeAiConnection(process.env.AI_PROVIDER);
     aiModel = '';
   }
 }
@@ -2328,9 +2881,11 @@ async function repairAiModelPreference({ persist = false, notify = false } = {})
   updateActiveAssistantConnectionStatus();
   if (notify && previousModel) {
     if (previousModel === defaultApiModel) {
-      log(`${defaultApiModel} requires XAI_API_KEY. Grok browser login cannot use it.`);
+      log(`${defaultApiModel} requires XAI_API_KEY and was cleared for the current provider.`);
+    } else if (previousModel === defaultOpenAiModel) {
+      log(`${defaultOpenAiModel} requires OpenAI API key and was cleared for the current provider.`);
     } else {
-      log(`Grok CLI does not support ${previousModel}. Using CLI default.`);
+      log(`Current provider does not support ${previousModel}. Using provider default.`);
     }
   }
   return true;
@@ -2346,6 +2901,8 @@ async function savePreferences() {
         defaultEditor,
         editorKeymap,
         editorLineNumbers,
+        autoSaveEnabled,
+        aiProvider: aiConnection,
         aiConnection,
         aiModel,
       },
@@ -2949,7 +3506,12 @@ function renderEditor(lines, styles, width, height) {
     return;
   }
 
-  const contentCol = 2;
+  const showFilePanel = width >= editorThreeColumnMinTerminalWidth && height >= 12;
+  const filePanelWidth = showFilePanel
+    ? clamp(Math.floor(width * 0.2), editorFilePanelMinWidth, editorFilePanelMaxWidth)
+    : 0;
+  const fileGapWidth = showFilePanel ? 2 : 0;
+  const contentCol = showFilePanel ? filePanelWidth + fileGapWidth + 1 : 2;
   const showAssistantSidePanel =
     isAssistantEnabled() &&
     width >= assistantSidePanelMinTerminalWidth &&
@@ -2960,6 +3522,11 @@ function renderEditor(lines, styles, width, height) {
   const gapWidth = showAssistantSidePanel ? 2 : 0;
   const contentWidth = Math.max(1, width - contentCol - assistantWidth - gapWidth);
   const assistantColumn = Math.max(1, width - assistantWidth + 1);
+
+  if (showFilePanel) {
+    renderEditorFilePanel(lines, styles, 1, 1, filePanelWidth, height);
+  }
+
   const header = `Edit ${editor.row.path}  ${editor.keymap}${isEditorDirty() ? '  [+]' : ''}`;
   put(lines, styles, 1, contentCol, clipDisplayWidth(header, contentWidth), 'accent');
   put(lines, styles, 2, contentCol, '─'.repeat(contentWidth), 'border');
@@ -3036,6 +3603,41 @@ function renderEditorTiny(lines, styles, width, height) {
   cursorTarget = { column: 1, row: height };
 }
 
+function renderEditorFilePanel(lines, styles, startCol, startRow, panelWidth, panelHeight) {
+  const innerWidth = Math.max(1, panelWidth - 3);
+  fillRect(lines, styles, startRow, startCol, panelWidth, panelHeight, 'surface:normal');
+  put(lines, styles, startRow, startCol + 1, 'Files', 'surface:accent');
+  put(lines, styles, startRow + 1, startCol + 1, '^N new  ^O open', 'surface:faint');
+
+  const draftRows = rows.filter((row) => row.status === 'draft');
+  const postRows = rows.filter((row) => row.status === 'post' || row.status === 'draft?');
+  const visibleRows = [
+    { header: 'Drafts' },
+    ...draftRows.slice(0, 8).map((row) => ({ row })),
+    { header: 'Posts' },
+    ...postRows.slice(0, Math.max(0, panelHeight - draftRows.length - 8)).map((row) => ({ row })),
+  ];
+
+  let rowNumber = startRow + 3;
+  for (const item of visibleRows) {
+    if (rowNumber >= startRow + panelHeight - 2) break;
+    if (item.header) {
+      put(lines, styles, rowNumber, startCol + 1, clipDisplayWidth(item.header, innerWidth), 'surface:muted');
+      rowNumber += 1;
+      continue;
+    }
+
+    const selected = item.row.filePath === editor.filePath;
+    const styleName = selected ? 'surface:selected' : 'surface:normal';
+    if (selected) fillRect(lines, styles, rowNumber, startCol, panelWidth, 1, styleName);
+    const label = `${item.row.status === 'draft' ? 'D' : 'P'} ${item.row.title}`;
+    put(lines, styles, rowNumber, startCol + 1, clipDisplayWidth(label, innerWidth), styleName);
+    rowNumber += 1;
+  }
+
+  put(lines, styles, startRow + panelHeight - 2, startCol + 1, '^K commands', 'surface:faint');
+}
+
 function renderAssistantOverlay(lines, styles, width, height) {
   const panelWidth =
     width <= 82 ? width : Math.min(78, Math.max(assistantPanelMinWidth, width - 4));
@@ -3084,7 +3686,7 @@ function renderAssistantPanel(lines, styles, startCol, startRow, panelWidth, pan
 
   let actionCol = textCol;
   for (const [index, item] of writingAssistantActions.entries()) {
-    const label = index === assistant.actionIndex ? item.label : item.label.toLowerCase();
+    const label = index === assistant.actionIndex ? item.command : item.command;
     if (actionCol + displayWidth(label) >= startCol + panelWidth - 1) break;
     put(
       lines,
@@ -3135,9 +3737,11 @@ function renderAssistantPanel(lines, styles, startCol, startRow, panelWidth, pan
     assistant.focused ? 'surface:strong' : 'surface:muted',
   );
 
-  const footer = assistant.focused
-    ? 'Enter send · arrows move · ^R replace'
-    : '^A focus';
+  const footer = assistant.loading
+    ? '^X stop · waiting for stream'
+    : assistant.focused
+      ? 'Enter send · arrows move · ^R apply'
+      : '^A focus · ^K commands';
   put(
     lines,
     styles,
@@ -3180,10 +3784,18 @@ function getAssistantResultLines(width) {
   };
 
   if (assistant.loading) {
-    push('Asking Grok...', 'muted');
+    push(currentAssistantAction().label, 'accent');
+    push('', 'normal');
+    if (assistant.streamingText) {
+      pushBlock(assistant.streamingText, 'normal');
+    } else {
+      push('Connecting to writing agent...', 'muted');
+      push('The first chunk will appear here.', 'faint');
+    }
   } else if (!assistant.result) {
-    push('Ask, polish, continue, outline, or metadata.', 'muted');
-    push('Type and press Enter.', 'faint');
+    push('/idea /outline /draft /rewrite /polish', 'muted');
+    push('/expand /compress /title /tweet /summary /critic', 'muted');
+    push('Type context, choose a command, press Enter.', 'faint');
   } else {
     const result = assistant.result;
     push(getWritingAssistantAction(result.actionId).label, 'accent');
@@ -3348,6 +3960,26 @@ function editorPromptText() {
 
 function getEditorPageRows(height = process.stdout.rows || 32) {
   return Math.max(1, height - 4);
+}
+
+function currentEditorContentWidth() {
+  const width = Math.max(1, process.stdout.columns || 100);
+  const height = Math.max(1, process.stdout.rows || 32);
+  const showFilePanel = width >= editorThreeColumnMinTerminalWidth && height >= 12;
+  const filePanelWidth = showFilePanel
+    ? clamp(Math.floor(width * 0.2), editorFilePanelMinWidth, editorFilePanelMaxWidth)
+    : 0;
+  const fileGapWidth = showFilePanel ? 2 : 0;
+  const contentCol = showFilePanel ? filePanelWidth + fileGapWidth + 1 : 2;
+  const showAssistantSidePanel =
+    isAssistantEnabled() &&
+    width >= assistantSidePanelMinTerminalWidth &&
+    height >= 12;
+  const assistantWidth = showAssistantSidePanel
+    ? clamp(Math.floor(width * 0.34), assistantPanelMinWidth, assistantPanelMaxWidth)
+    : 0;
+  const gapWidth = showAssistantSidePanel ? 2 : 0;
+  return Math.max(1, width - contentCol - assistantWidth - gapWidth);
 }
 
 function renderSyncConfirm(lines, styles, width, height) {

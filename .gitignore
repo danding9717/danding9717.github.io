@@ -6,3 +6,9 @@ dist/
 .env.*
 !.env.example
 .blog-trash/
+
+# Drafts are private (never committed). The nested .gitignore inside drafts/ allows
+# tracking the ignore file itself while ignoring all actual draft content and assets.
+src/content/drafts/
+!src/content/drafts/.gitignore
+exports/

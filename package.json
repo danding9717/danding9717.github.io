@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "myblog": "scripts/admin.mjs"
+  },
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
@@ -10,7 +13,8 @@
     "check": "astro check",
     "preview": "astro preview",
     "admin": "node scripts/admin.mjs",
-    "admin:install": "node scripts/install-admin.mjs"
+    "admin:install": "node scripts/install-admin.mjs",
+    "test": "node --test"
   },
   "dependencies": {
     "@astrojs/mdx": "^6.0.1",
