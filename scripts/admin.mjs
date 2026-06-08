@@ -2730,9 +2730,8 @@ async function connectOpenAiApiKey() {
 async function connectMockProvider() {
   await runTask(async () => {
     aiConnection = aiConnectionModes.mock;
-    if (!aiModel || aiModel === defaultApiModel) {
-      aiModel = defaultMockModel;
-    }
+    await repairAiModelPreference({ notify: true });
+    if (!aiModel) aiModel = defaultMockModel;
     await savePreferences();
     updateActiveAssistantConnectionStatus();
     log('AI provider set to Mock. Writing Agent can run offline.');

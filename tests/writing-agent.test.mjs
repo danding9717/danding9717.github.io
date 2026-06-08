@@ -143,6 +143,13 @@ test('Model repair clears cross-provider defaults', async () => {
   });
   assert.equal(repairedXai.changed, true);
   assert.equal(repairedXai.model, '');
+
+  const repairedMock = await repairAiModelForConnection({
+    connection: aiProviderModes.mock,
+    model: defaultOpenAiModel,
+  });
+  assert.equal(repairedMock.changed, true);
+  assert.equal(repairedMock.model, 'mock-writer');
 });
 
 test('Context trimming limits long documents before prompting', () => {

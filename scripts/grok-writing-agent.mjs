@@ -69,6 +69,11 @@ export async function repairAiModelForConnection({ connection, provider, model }
     return { changed: false, model: selectedModel };
   }
 
+  if (normalizedProvider === aiProviderModes.mock) {
+    if (selectedModel !== defaultMockModel) return { changed: true, model: defaultMockModel };
+    return { changed: false, model: selectedModel };
+  }
+
   if (normalizedProvider === aiProviderModes.openai) {
     if (selectedModel === defaultApiModel || selectedModel === defaultMockModel) {
       return { changed: true, model: '' };
