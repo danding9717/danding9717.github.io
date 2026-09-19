@@ -17,12 +17,12 @@
     "test": "node --test"
   },
   "dependencies": {
-    "@astrojs/mdx": "^6.0.1",
-    "@astrojs/rss": "^4.0.18",
-    "astro": "^6.4.2"
+    "@astrojs/mdx": "^8.0.1",
+    "@astrojs/rss": "^4.0.19",
+    "astro": "^7.3.3"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.9",
+    "@astrojs/check": "^0.9.10",
     "typescript": "^6.0.3"
   }
 }
