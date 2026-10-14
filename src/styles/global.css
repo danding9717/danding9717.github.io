@@ -1,8 +1,8 @@
 @import './themes.css';
 
 :root {
-  /* 页头、正文、页脚同宽。根字号 18px 时约 630px，每行约 35 个汉字。 */
-  --measure: 35rem;
+  /* 正文栏宽。根字号 18px 时约 740px，每行约 41 个汉字，和 Naval 的栏宽比例接近。 */
+  --measure: 41rem;
   --gutter: 24px;
   --radius: 8px;
   --font-sans:
@@ -217,36 +217,32 @@ time {
   margin-bottom: 0;
 }
 
-/* 「最新」卡片整块是一个链接。 */
+/* 「最新」学 Naval 的条目：不加框，靠大标题撑起层级；整块仍是一个链接。 */
 .featured-post {
   display: block;
-  padding: 1.1rem 1.25rem;
   color: var(--text);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
   text-decoration: none;
-  transition: border-color 160ms ease;
 }
 
 .featured-post:hover {
   color: var(--text);
-  border-color: var(--line-strong);
 }
 
 .featured-post:hover .featured-title {
   color: var(--accent-text);
 }
 
-.featured-post .post-info {
-  margin-bottom: 0.4em;
+/* 没有框，焦点框往外让一点，别贴着字。 */
+.featured-post:focus-visible {
+  outline-offset: 0.375rem;
+  border-radius: var(--radius);
 }
 
 .featured-title {
   margin: 0;
-  font-size: 1.25em;
+  font-size: 1.4em;
   font-weight: var(--font-strong);
-  line-height: 1.45;
+  line-height: 1.4;
   text-wrap: balance;
   transition: color 160ms ease;
 }
@@ -257,10 +253,19 @@ time {
   text-wrap: pretty;
 }
 
+/* 跟在摘要末尾的小字，像 Naval 的「More ›」。没有摘要时不留空。 */
+.featured-desc {
+  margin-right: 0.25em;
+}
+
 .featured-more {
-  margin: 0.75em 0 0;
   color: var(--muted);
   font-size: 0.875em;
+  white-space: nowrap;
+}
+
+.featured-post .post-info {
+  margin: 0.6em 0 0;
 }
 
 .post-info {

@@ -7,8 +7,6 @@
 :root {
   color-scheme: light;
   --bg: #f9f9f7;
-  --card: #ffffff;
-  --hover: #ecece9;
   --text: #2d2d2b;
   --muted: #6b6b67;
   --secondary: #4f4f4b;
@@ -29,8 +27,6 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #2d2d2b;
-  --card: #373735;
-  --hover: #41413e;
   --text: #f9f9f7;
   --muted: #b2b2b0;
   --secondary: #d0d0cc;
@@ -53,8 +49,6 @@
   :root:not([data-theme="light"]) {
     color-scheme: dark;
     --bg: #2d2d2b;
-    --card: #373735;
-    --hover: #41413e;
     --text: #f9f9f7;
     --muted: #b2b2b0;
     --secondary: #d0d0cc;
