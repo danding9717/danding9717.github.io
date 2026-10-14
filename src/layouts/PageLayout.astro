@@ -1,6 +1,5 @@
 ---
-// 给 src/pages 里的 Markdown 页面（例如 now.md）用的版式。
-import PageHeading from '../components/PageHeading.astro';
+// 给 src/pages 里的 Markdown 页面（例如 now.md）用的版式，页头和文章页一致：日期、标题、副标题。
 import BaseLayout from './BaseLayout.astro';
 import { formatDate } from '../utils/posts';
 
@@ -13,12 +12,23 @@ interface Props {
 }
 
 const { title, description, updated } = Astro.props.frontmatter;
-// YAML 会把 2026-10-14 解析成日期，这里统一转回 YYYY-MM-DD。
-const updatedText = updated instanceof Date ? formatDate(updated) : updated;
+// Markdown 页面的日期传到这里时已经变成字符串（如 2026-10-14T00:00:00.000Z），先转回 Date 再格式化。
+const updatedDate = updated ? new Date(updated) : undefined;
+const hasUpdated = updatedDate && !Number.isNaN(updatedDate.getTime());
 ---
 
 <BaseLayout title={title} description={description}>
-  <PageHeading title={title} description={updatedText ? `更新于 ${updatedText}` : undefined} />
+  <header class="post-header">
+    {
+      hasUpdated && (
+        <p class="post-info">
+          <time datetime={updatedDate.toISOString()}>更新于 {formatDate(updatedDate)}</time>
+        </p>
+      )
+    }
+    <h1>{title}</h1>
+    {description && <p class="post-subtitle">{description}</p>}
+  </header>
   <article class="prose">
     <slot />
   </article>

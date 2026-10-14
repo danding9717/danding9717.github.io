@@ -368,6 +368,11 @@ time {
   margin: 0 0 2em;
 }
 
+/* 标题上方的日期用等宽字，和页头的名字呼应。 */
+.post-header .post-info {
+  font-family: var(--font-mono);
+}
+
 .post-subtitle {
   margin: 0.6em 0 0;
   padding-bottom: 1.2em;

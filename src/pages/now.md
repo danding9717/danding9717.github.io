@@ -1,11 +1,9 @@
 ---
 layout: ../layouts/PageLayout.astro
 title: Now
-description: Dan Hu 最近在做的事。
+description: 这一页记录我最近在做什么。如果你很久没联系我，可以先看看这里。
 updated: 2026-10-14
 ---
-
-这一页记录我最近在做什么。如果你很久没联系我，可以先看看这里。
 
 ## 一个月的付费验证
 
