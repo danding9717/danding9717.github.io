@@ -4,11 +4,9 @@ import type { Post } from '../utils/posts';
 
 interface Props {
   posts: Post[];
-  /** 年份标题的层级：首页挂在「全部文章」下用 h3，归档页直接挂在页面标题下用 h2。 */
-  headingLevel?: 2 | 3;
 }
 
-const { posts, headingLevel = 3 } = Astro.props;
+const { posts } = Astro.props;
 const years = Object.entries(
   posts.reduce<Record<string, Post[]>>((groups, post) => {
     const year = String(post.data.date.getFullYear());
@@ -22,11 +20,7 @@ const years = Object.entries(
   {
     years.map(([year, yearPosts]) => (
       <section class="year-group" id={year} aria-label={`${year} 年`}>
-        {headingLevel === 2 ? (
-          <h2 class="section-title">{year}</h2>
-        ) : (
-          <h3 class="section-title">{year}</h3>
-        )}
+        <h2 class="section-title">{year}</h2>
         <ol class="post-rows">
           {yearPosts.map((post) => (
             <PostRow post={post} shortDate />
