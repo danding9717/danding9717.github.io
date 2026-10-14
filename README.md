@@ -24,7 +24,7 @@ npm run preview
 整体参考 Naval（nav.al）和 Steph Ango（stephango.com）：一篇只讲一个观点，全站只有一张安静的文章清单。文章用「主题」（frontmatter 里的 `tags`）组织，不再有分类页。
 
 - `/`：一句自我介绍 → 最新一篇（整张卡片可点）→ 精选（带「精选」主题的文章达到 3 篇才显示，最多 5 篇）→ 主题。全部文章只在 `/archive/` 列出。没有文章时显示空状态。
-- `/posts/<文件名>/`：文章页。标题上方是日期和阅读时长，下面是副标题（`description`，和正文第一段重复时不显示）。二级标题达到 4 个时在正文上方放一个简单目录。文末依次是「提到这篇的文章」（反向链接）、「相关文章」（按共同主题，最多 3 篇）和「主题：……」。
+- `/posts/<文件名>/`：文章页。标题上方是日期和阅读时长，下面是副标题（`description`，和正文第一段重复时不显示）。二级标题达到 4 个时在正文上方放一个简单目录。文末依次是「提到这篇的文章」（反向链接）、「相关文章」（按共同主题，最多 3 篇）、「主题：……」和评论区（见下文「评论」）。
 - `/topics/`、`/topics/<主题>/`：按主题浏览。
 - `/now/`：Now 页（最近在做什么），内容直接改 `src/pages/now.md`，改完顺手更新里面的 `updated` 日期。
 - `/archive/`：归档（页头第一个链接）。标题下是一条搜索框（Pagefind 全文搜索，有输入时用结果替换列表，按 Esc 清空），下面是精选和按年份排列的全部文章。`/archive/?q=关键词` 可以直接打开搜索结果。
@@ -168,6 +168,21 @@ draft: false
 - 浅色、深色两套主题的颜色变量在 `src/styles/themes.css`，代码高亮配色在 `src/styles/code-themes.mjs`，布局和排版在 `src/styles/global.css`。没有手动选过主题的访客会跟随系统的深浅色设置。
 - 关于页内容在 `src/pages/about.astro`。
 
+## 评论
+
+文章末尾的评论区用 [giscus](https://giscus.app/zh-CN)：评论存在本仓库的 GitHub Discussions 里（Announcements 分类），每篇文章对应一条讨论，有人发第一条评论时自动创建。读者用 GitHub 账号登录后评论。
+
+- 设置在 `src/consts.ts` 的 `GISCUS`，几个值都来自 giscus.app 的配置页。`categoryId` 留空时不显示评论区。
+- 文章按地址名（slug）对应讨论，换域名、改标题都不影响已有评论；改了 slug 会和旧评论断开。
+- 评论区的配色在 `public/giscus/light.css` 和 `dark.css`，跟着页面的浅色、深色切换。改了 `src/styles/themes.css` 的颜色时，这两个文件里的对应颜色也要一起改。
+- 删除、隐藏评论或锁定讨论，到仓库的 Discussions 页面操作。
+
+第一次启用要在 GitHub 上做三件事：
+
+1. 仓库 Settings → General → Features 里勾选 Discussions。
+2. 安装 [giscus 应用](https://github.com/apps/giscus)，只授权本仓库。
+3. 打开 [giscus.app](https://giscus.app/zh-CN)，仓库填 `danding9717/danding9717.github.io`，分类选 Announcements，把生成代码里的 `data-category-id` 填进 `GISCUS.categoryId`。
+
 ## GitHub Pages 部署
 
 博客网址只写在根目录的 `site.config.mjs` 里（`SITE_URL`），网站构建和 `myblog` 的 `/preview` 都从这里读取，不要在别处再写一遍。当前是：
@@ -189,4 +204,4 @@ https://danding9717.github.io/
    - 如果也用 `www.example.com`：一条 CNAME 记录，指向 `danding9717.github.io`。
 4. 等 DNS 生效、GitHub 检查通过后，在同一页勾选 Enforce HTTPS。
 
-完成后访问 `danding9717.github.io` 的旧链接会由 GitHub 自动跳到新域名，文章地址不变。RSS、sitemap 和每页的 canonical 链接会在下一次构建时换成新域名。
+完成后访问 `danding9717.github.io` 的旧链接会由 GitHub 自动跳到新域名，文章地址不变。RSS、sitemap 和每页的 canonical 链接会在下一次构建时换成新域名。评论区不用改设置，已有评论照常显示。

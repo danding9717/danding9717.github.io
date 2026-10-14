@@ -1,0 +1,95 @@
+---
+// 文章末尾的评论区，由 giscus 显示，评论存在本仓库的 GitHub Discussions 里。
+// 没开 JS、或者 giscus 的脚本加载不了时，整块不显示。
+import { GISCUS } from '../consts';
+import { withBase } from '../utils/paths';
+
+interface Props {
+  /** 这篇文章在 Discussions 里对应的讨论，用文章地址名（slug），换域名、改标题都不会和评论断开。 */
+  term: string;
+}
+
+const { term } = Astro.props;
+
+const config = {
+  repo: GISCUS.repo,
+  repoId: GISCUS.repoId,
+  category: GISCUS.category,
+  categoryId: GISCUS.categoryId,
+  mapping: 'specific',
+  term,
+  // 按标题精确匹配讨论，避免 ai 和 ai-tools 这类相近的地址名串到一起。
+  strict: '1',
+  reactionsEnabled: '0',
+  emitMetadata: '0',
+  inputPosition: 'bottom',
+  lang: 'zh-CN',
+  loading: 'lazy',
+};
+
+// 评论区的两套配色，跟着页面的浅色、深色切换。
+const themes = {
+  light: withBase('/giscus/light.css'),
+  dark: withBase('/giscus/dark.css'),
+};
+---
+
+{
+  GISCUS.categoryId && (
+    <section class="post-section comments" aria-labelledby="comments-title" hidden>
+      <h2 class="section-title" id="comments-title">评论</h2>
+      <div class="giscus" id="comments" />
+      <script is:inline define:vars={{ config, themes }}>
+        const giscusOrigin = 'https://giscus.app';
+        const root = document.documentElement;
+        const section = document.currentScript.closest('.comments');
+        const container = section.querySelector('.giscus');
+        // giscus 在 iframe 里加载样式表，所以要给完整网址；用当前网址拼，换域名也不用改。
+        const pageTheme = () =>
+          new URL(root.dataset.theme === 'dark' ? themes.dark : themes.light, location.href).href;
+
+        // iframe 当前用的配色，和它是否已经能接收换色消息。
+        let frameTheme = '';
+        let frameReady = false;
+
+        function syncTheme() {
+          const theme = pageTheme();
+          const frame = container.querySelector('iframe');
+          if (!frameReady || !frame || theme === frameTheme) return;
+          frame.contentWindow.postMessage({ giscus: { setConfig: { theme } } }, giscusOrigin);
+          frameTheme = theme;
+        }
+
+        // giscus 新建或重新加载 iframe（例如退出登录）时，记下网址里的配色，等它发来消息再补发当前配色。
+        new MutationObserver(() => {
+          const frame = container.querySelector('iframe');
+          if (!frame) return;
+          frameTheme = new URL(frame.src).searchParams.get('theme') ?? '';
+          frameReady = false;
+        }).observe(container, { childList: true, subtree: true, attributeFilter: ['src'] });
+
+        window.addEventListener('message', (event) => {
+          if (event.origin !== giscusOrigin || !event.data?.giscus) return;
+          frameReady = true;
+          syncTheme();
+        });
+
+        new MutationObserver(syncTheme).observe(root, {
+          attributes: true,
+          attributeFilter: ['data-theme'],
+        });
+
+        const script = document.createElement('script');
+        script.src = `${giscusOrigin}/client.js`;
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        Object.assign(script.dataset, config, { theme: pageTheme() });
+        script.addEventListener('error', () => {
+          section.hidden = true;
+        });
+        section.hidden = false;
+        section.append(script);
+      </script>
+    </section>
+  )
+}
