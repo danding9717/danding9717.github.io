@@ -125,3 +125,8 @@ main .gsc-header {
 main .gsc-loading-image {
   display: none;
 }
+
+/* 评论框只留输入框，去掉「输入 / 预览」切换和等宽字体按钮，写完直接发。 */
+main .gsc-comment-box-tabs {
+  display: none;
+}

@@ -174,7 +174,7 @@ draft: false
 
 - 设置在 `src/consts.ts` 的 `GISCUS`，几个值都来自 giscus.app 的配置页。`categoryId` 留空时不显示评论区。
 - 文章按地址名（slug）对应讨论，换域名、改标题都不影响已有评论；改了 slug 会和旧评论断开。
-- 评论区的配色在 `public/giscus/light.css` 和 `dark.css`，跟着页面的浅色、深色切换。改了 `src/styles/themes.css` 的颜色时，这两个文件里的对应颜色也要一起改。
+- 评论区的配色在 `public/giscus/light.css` 和 `dark.css`，跟着页面的浅色、深色切换。改了 `src/styles/themes.css` 的颜色时，这两个文件里的对应颜色也要一起改。这两个文件还去掉了评论框的「输入 / 预览」切换，读者打开就是输入框。
 - 删除、隐藏评论或锁定讨论，到仓库的 Discussions 页面操作。
 
 第一次启用要在 GitHub 上做三件事：
