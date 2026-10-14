@@ -1,17 +1,17 @@
 ---
 import PageHeading from '../components/PageHeading.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { AUTHOR_NAME, AUTHOR_NAME_EN, GITHUB_URL } from '../consts';
+import { AUTHOR_NAME, GITHUB_URL } from '../consts';
 import { withBase } from '../utils/paths';
 
 const rssUrl = new URL(withBase('/rss.xml'), Astro.site).href;
 ---
 
-<BaseLayout title="关于" description={`关于${AUTHOR_NAME}和这个博客。`}>
+<BaseLayout title="关于" description={`关于 ${AUTHOR_NAME} 和这个博客。`}>
   <PageHeading title="关于" />
   <article class="prose">
     <h2>我是谁</h2>
-    <p>你好，我是{AUTHOR_NAME}，英文名 {AUTHOR_NAME_EN}。</p>
+    <p>你好，我是 {AUTHOR_NAME}。</p>
     <p>这里是我的个人博客，用来记录技术、商业、阅读、生活和长期思考。一篇文章只讲一个观点，想清楚了再写下来。</p>
 
     <h2>在别处</h2>

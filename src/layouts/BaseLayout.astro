@@ -1,6 +1,6 @@
 ---
 import Header, { type Crumb } from '../components/Header.astro';
-import { AUTHOR_NAME, AUTHOR_NAME_EN, GITHUB_URL, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { AUTHOR_NAME, GITHUB_URL, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
 import { withBase } from '../utils/paths';
 import '../styles/global.css';
 
@@ -9,7 +9,7 @@ interface Props {
   description?: string;
   type?: 'website' | 'article';
   publishedTime?: Date;
-  /** 页头面包屑，例如文章页的「胡少卿 / 文章」。 */
+  /** 页头面包屑，例如文章页的「Dan Hu / 文章」。 */
   crumb?: Crumb;
 }
 
@@ -31,7 +31,7 @@ const imageUrl = new URL(withBase('/logo.png'), Astro.site);
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
-    <meta name="author" content={`${AUTHOR_NAME} (${AUTHOR_NAME_EN})`} />
+    <meta name="author" content={AUTHOR_NAME} />
     <meta name="generator" content={Astro.generator} />
     <link rel="canonical" href={canonicalUrl} />
     <meta property="og:type" content={type} />

@@ -1,5 +1,5 @@
 ---
-import { AUTHOR_NAME_EN, NAV_LINKS, SITE_TITLE } from '../consts';
+import { NAV_LINKS, SITE_TITLE } from '../consts';
 import { stripBase, withBase } from '../utils/paths';
 
 export interface Crumb {
@@ -21,7 +21,6 @@ const currentPath = stripBase(Astro.url.pathname);
     <a class="site-home" href={withBase('/')}>
       <span class="site-logo" style={`--logo-image: ${logoImage}`} aria-hidden="true"></span>
       <span>{SITE_TITLE}</span>
-      <span class="site-name-en">{AUTHOR_NAME_EN}</span>
     </a>
     {
       crumb && (

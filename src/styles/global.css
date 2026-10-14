@@ -128,11 +128,6 @@ time {
   -webkit-mask: var(--logo-image) center / contain no-repeat;
 }
 
-.site-name-en {
-  color: var(--muted);
-  font-weight: 400;
-}
-
 .crumb-separator {
   color: var(--muted);
   font-weight: 400;
@@ -846,11 +841,6 @@ time {
 @media (max-width: 600px) {
   .backlinks {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  /* 手机上带面包屑时位置不够，只留中文名。 */
-  .site-title:has(.crumb) .site-name-en {
-    display: none;
   }
 }
 
