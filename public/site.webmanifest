@@ -1,14 +1,14 @@
 {
-  "name": "Dan Ding",
-  "short_name": "Dan Ding",
+  "name": "Dan Hu",
+  "short_name": "Dan Hu",
   "icons": [
     {
-      "src": "/site-icons/dan-ding-icon-192-v3.png",
+      "src": "/site-icons/dan-hu-icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/site-icons/dan-ding-icon-512-v3.png",
+      "src": "/site-icons/dan-hu-icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
