@@ -1,14 +1,32 @@
 ---
+import PageHeading from '../components/PageHeading.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { AUTHOR_NAME, GITHUB_URL } from '../consts';
+import { withBase } from '../utils/paths';
+
+const rssUrl = new URL(withBase('/rss.xml'), Astro.site).href;
 ---
 
-<BaseLayout title="About" description="About Dan and this personal blog.">
-  <article class="page-heading prose">
-    <h1>About</h1>
+<BaseLayout title="关于" description={`关于 ${AUTHOR_NAME} 和这个博客。`}>
+  <PageHeading title="关于" />
+  <article class="prose">
+    <h2>我是谁</h2>
     <p>你好，我是 Dan。</p>
-    <p>
-      这里是我的个人博客，用来记录技术、商业、阅读、生活和长期思考。
-    </p>
-    <p>后续我会自己修改。</p>
+    <p>这里是我的个人博客，用来记录技术、商业、阅读、生活和长期思考。一篇文章只讲一个观点，想清楚了再写下来。</p>
+
+    <h2>在别处</h2>
+    <p>GitHub：<a href={GITHUB_URL}>@danding9717</a></p>
+
+    <h2>本站</h2>
+    <p>文章在终端里用自己写的 <code>myblog</code> 工具写成，由 <a href="https://astro.build/">Astro</a> 生成静态页面，托管在 GitHub Pages 上。配色是暖灰加陶土色，有浅色和深色两套，默认跟随系统，按 <kbd>D</kbd> 键可以切换。</p>
+
+    <h2>订阅</h2>
+    <p>RSS 地址：<a href={withBase('/rss.xml')}>{rssUrl}</a></p>
+    <p>RSS 是一种订阅方式：把这个地址加进阅读器，有新文章时会自动出现在里面，不用常回来看。可以试试这几个阅读器：</p>
+    <ul>
+      <li><a href="https://netnewswire.com/">NetNewsWire</a>：Mac 和 iPhone，免费开源。</li>
+      <li><a href="https://www.inoreader.com/">Inoreader</a>：网页、安卓和 iPhone 都能用。</li>
+      <li><a href="https://feedly.com/">Feedly</a>：网页和手机都有，登录后粘贴地址就能订阅。</li>
+    </ul>
   </article>
 </BaseLayout>

@@ -1,54 +1,118 @@
 ---
-import { getCollection, render } from 'astro:content';
+import { render } from 'astro:content';
+import PostRow from '../../components/PostRow.astro';
+import TopicList from '../../components/TopicList.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { formatDate, isPublished, sortPosts } from '../../utils/posts';
+import {
+  descriptionRepeatsBody,
+  formatDate,
+  getBacklinks,
+  getPostUrl,
+  getPublishedPosts,
+  getReadingMinutes,
+  getRelatedPosts,
+  type Post,
+} from '../../utils/posts';
 import { withBase } from '../../utils/paths';
 
 export async function getStaticPaths() {
-  const posts = sortPosts((await getCollection('posts')).filter(isPublished));
+  const posts = await getPublishedPosts();
+  const backlinks = getBacklinks(posts);
 
   return posts.map((post) => ({
     params: { slug: post.id },
-    props: { post },
+    props: {
+      post,
+      backlinks: backlinks.get(post.id) ?? [],
+      related: getRelatedPosts(post, posts),
+    },
   }));
 }
 
-const { post } = Astro.props;
-const { Content } = await render(post);
+interface Props {
+  post: Post;
+  backlinks: Post[];
+  related: Post[];
+}
+
+const { post, backlinks, related } = Astro.props;
+const { Content, headings } = await render(post);
+// 只有二级标题达到 4 个的长文（通常是合集）才在正文上方放目录。
+const sections = headings.filter((heading) => heading.depth === 2);
+const showToc = sections.length >= 4;
+const showSubtitle = !descriptionRepeatsBody(post);
+const topics = [...new Set(post.data.tags)];
 ---
 
-<BaseLayout title={post.data.title} description={post.data.description}>
-  <article class="post-detail">
-    <p class="post-date">
-      <time datetime={post.data.date.toISOString()}>
-        {formatDate(post.data.date)}
-      </time>
-    </p>
-    <div class="post-detail-content">
-      <header class="post-header">
-        <h1>{post.data.title}</h1>
-        <p class="post-meta">
-          <span class="tag" aria-label={`Category: ${post.data.category}`}>
-            {post.data.category}
-          </span>
-          {
-            post.data.tags.map((tag) => (
-              <span class="tag" aria-label={`Tag: ${tag}`}>
-                {tag}
-              </span>
-            ))
-          }
-        </p>
-      </header>
+<BaseLayout
+  title={post.data.title}
+  description={post.data.description}
+  type="article"
+  publishedTime={post.data.date}
+  crumb={{ href: withBase('/#posts'), label: '文章' }}
+>
+  <article class="post" data-pagefind-body>
+    <header class="post-header">
+      <p class="post-info" data-pagefind-ignore>
+        <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time>
+        <span aria-hidden="true"> · </span>
+        <span>{getReadingMinutes(post)} 分钟阅读</span>
+      </p>
+      <h1 data-pagefind-meta="title">{post.data.title}</h1>
+      {showSubtitle && <p class="post-subtitle">{post.data.description}</p>}
+    </header>
 
-      <div class="prose">
-        <Content />
-      </div>
+    {
+      showToc && (
+        <nav class="post-toc" aria-label="文章目录" data-pagefind-ignore>
+          <ol>
+            {sections.map((heading) => (
+              <li>
+                <a href={`#${heading.slug}`}>{heading.text}</a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )
+    }
 
-      <footer class="post-backlinks">
-        <a href={withBase('/')}>返回首页</a>
-        <a href={withBase('/archive/')}>返回 Archive</a>
-      </footer>
+    <div class="prose">
+      <Content />
     </div>
   </article>
+
+  <footer class="post-footer">
+    {
+      backlinks.length > 0 && (
+        <section class="post-section" aria-labelledby="backlinks-title">
+          <h2 class="section-title" id="backlinks-title">提到这篇的文章</h2>
+          <ul class="backlinks">
+            {backlinks.map((item) => (
+              <li>
+                <a class="backlink" href={getPostUrl(item)}>
+                  <span class="backlink-title">{item.data.title}</span>
+                  {item.data.description && <span class="backlink-lede">{item.data.description}</span>}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    {
+      related.length > 0 && (
+        <section class="post-section" aria-labelledby="related-title">
+          <h2 class="section-title" id="related-title">相关文章</h2>
+          <ol class="post-rows">
+            {related.map((item) => (
+              <PostRow post={item} />
+            ))}
+          </ol>
+        </section>
+      )
+    }
+
+    {topics.length > 0 && <TopicList topics={topics} label="主题：" />}
+  </footer>
 </BaseLayout>

@@ -15,6 +15,8 @@ import {
   listNotes,
   moveNoteToTrash,
   openFile,
+  parseFrontmatter,
+  parseTags,
   projectRoot,
   publishDraft,
 } from './blog-core.mjs';
@@ -4287,19 +4289,14 @@ function ensureReaderLayout(width) {
 
 function parseReaderDocument(rawContent, row) {
   const { frontmatter, body } = splitReaderFrontmatter(rawContent);
-  const values = {};
-
-  for (const line of frontmatter.split(/\r?\n/)) {
-    const match = line.match(/^([A-Za-z][\w-]*):\s*(.*)$/);
-    if (match) values[match[1]] = match[2];
-  }
+  const values = parseFrontmatter(frontmatter);
 
   return {
     body,
     metadata: {
       category: stripReaderQuotes(values.category),
       date: stripReaderQuotes(values.date) || row.date,
-      tags: parseReaderTags(values.tags),
+      tags: parseTags(values.tags),
       title: stripReaderQuotes(values.title) || row.title,
     },
   };
@@ -4313,16 +4310,6 @@ function splitReaderFrontmatter(content) {
     body: String(content).slice(match[0].length),
     frontmatter: match[1],
   };
-}
-
-function parseReaderTags(value = '') {
-  const list = String(value).trim().replace(/^\[/, '').replace(/\]$/, '');
-  if (!list) return [];
-
-  return list
-    .split(',')
-    .map((tag) => stripReaderQuotes(tag.trim()))
-    .filter(Boolean);
 }
 
 function stripReaderQuotes(value = '') {

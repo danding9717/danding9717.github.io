@@ -1,0 +1,24 @@
+---
+import PostRow from './PostRow.astro';
+import type { Post } from '../utils/posts';
+
+interface Props {
+  posts: Post[];
+  label: string;
+  emptyText?: string;
+}
+
+const { posts, label, emptyText = '这里还没有文章。' } = Astro.props;
+---
+
+{
+  posts.length ? (
+    <ol class="post-rows" aria-label={label}>
+      {posts.map((post) => (
+        <PostRow post={post} />
+      ))}
+    </ol>
+  ) : (
+    <p class="empty-state">{emptyText}</p>
+  )
+}

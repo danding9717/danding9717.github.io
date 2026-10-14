@@ -31,6 +31,9 @@ const imageExtensions = new Set([
   '.webp',
 ]);
 
+// 新草稿的骨架：动笔前先想好标题（一句观点）和一句导语。
+const DRAFT_TEMPLATE = ['---', 'title:', 'description:', 'tags: []', 'slug:', '---', '', ''].join('\n');
+
 export class BlogError extends Error {
   constructor(message, options = {}) {
     super(message);
@@ -134,7 +137,7 @@ export async function createDraft(compactDate, options = {}) {
   const draftPath = path.join(draftsDir, `${normalizedDate}.md`);
   await mkdir(assetsDir, { recursive: true });
 
-  await writeFile(draftPath, '', 'utf8');
+  await writeFile(draftPath, DRAFT_TEMPLATE, 'utf8');
   messages.push(`已创建草稿：${relative(draftPath)}`);
 
   messages.push(`图片目录：${relative(assetsDir)}`);
@@ -253,23 +256,33 @@ export async function publishDraft(compactDate, options = {}) {
   const existingMetadata = parseFrontmatter(frontmatter);
   const assetsDir = path.join(draftsDir, `${normalizedDate}.assets`);
 
-  const processedBody = await processImages(body, {
+  // 先检查标题、导语、slug 和站内链接，都没问题再动图片和文件。
+  const { title, description, slug } = validateDraftMetadata(existingMetadata, body);
+  const publishedPosts = await listPublishedPostLinks();
+  const taken = slug && publishedPosts.find((post) => post.id === slug);
+  if (taken) {
+    throw new BlogError(`slug「${slug}」已经被 ${taken.path} 用了，换一个吧。`);
+  }
+
+  const linkTargets = new Map(publishedPosts.map((post) => [post.compact, post]));
+  linkTargets.set(normalizedDate, { id: slug || normalizedDate, title });
+  const linkedBody = rewritePostLinks(removeDuplicateTitle(body, title), linkTargets);
+
+  const processedBody = await processImages(linkedBody, {
     assetsDir,
     compactDate: normalizedDate,
     draftDir: draftsDir,
   });
-  const title = stripQuotes(existingMetadata.title) || normalizedDate;
-  const cleanedBody = removeDuplicateTitle(processedBody, title);
   const metadata = {
     category: stripQuotes(existingMetadata.category) || 'Daily',
     date: existingMetadata.date || toIsoDate(normalizedDate),
-    description:
-      stripQuotes(existingMetadata.description) || createDescription(cleanedBody, title),
+    description,
     draft: false,
+    slug,
     tags: parseTags(existingMetadata.tags),
     title,
   };
-  const finalContent = `${formatFrontmatter(metadata)}\n${cleanedBody.trim()}\n`;
+  const finalContent = `${formatFrontmatter(metadata)}\n${processedBody.trim()}\n`;
 
   await writeFile(destinationPath, finalContent, 'utf8');
 
@@ -773,36 +786,57 @@ function splitFrontmatter(content) {
   };
 }
 
-function parseFrontmatter(frontmatter) {
+/**
+ * 读 frontmatter 的简单键值。空值当作没写；空值后面缩进的「- x」行收集成数组
+ * （Obsidian 的块状 tags 就是这种写法）。值保留原样，引号由 stripQuotes 去掉。
+ */
+export function parseFrontmatter(frontmatter) {
   const metadata = {};
+  let listKey = null;
 
   for (const line of frontmatter.split(/\r?\n/)) {
-    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-    if (match) {
-      metadata[match[1]] = match[2].trim();
+    const item = listKey && line.match(/^\s*-\s+(.*)$/);
+    if (item) {
+      metadata[listKey].push(item[1].trim());
+      continue;
     }
+
+    listKey = null;
+    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (!match) continue;
+
+    const value = match[2].trim();
+    if (value) {
+      metadata[match[1]] = value;
+    } else {
+      metadata[match[1]] = [];
+      listKey = match[1];
+    }
+  }
+
+  for (const [key, value] of Object.entries(metadata)) {
+    if (Array.isArray(value) && !value.length) delete metadata[key];
   }
 
   return metadata;
 }
 
-function parseTags(value) {
+/** 支持 ["a", "b"]、块状列表和「a, b」三种写法。 */
+export function parseTags(value) {
   if (!value || value === '[]') return [];
 
-  const inlineTags = value.match(/^\[(.*)\]$/);
-  if (!inlineTags) return [];
+  const items = Array.isArray(value)
+    ? value
+    : (value.match(/^\[(.*)\]$/)?.[1] ?? value).split(',');
 
-  return inlineTags[1]
-    .split(',')
-    .map((tag) => stripQuotes(tag.trim()))
-    .filter(Boolean);
+  return [...new Set(items.map((tag) => stripQuotes(tag.trim())).filter(Boolean))];
 }
 
 function stripQuotes(value = '') {
-  return value.replace(/^["']|["']$/g, '').trim();
+  return String(value).replace(/^["']|["']$/g, '').trim();
 }
 
-function formatFrontmatter(metadata) {
+export function formatFrontmatter(metadata) {
   return [
     '---',
     `title: "${escapeYamlString(metadata.title)}"`,
@@ -810,6 +844,7 @@ function formatFrontmatter(metadata) {
     `category: "${escapeYamlString(metadata.category)}"`,
     `tags: ${formatTags(metadata.tags)}`,
     `description: "${escapeYamlString(metadata.description)}"`,
+    ...(metadata.slug ? [`slug: "${escapeYamlString(metadata.slug)}"`] : []),
     `draft: ${metadata.draft}`,
     '---',
   ].join('\n');
@@ -824,30 +859,110 @@ function escapeYamlString(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-function removeDuplicateTitle(content, title) {
-  const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return content.replace(new RegExp(`^#\\s+${escapedTitle}\\s*\\r?\\n+`), '');
+/** 正文第一行是「# 标题」时返回标题。 */
+export function extractHeadingTitle(content) {
+  const firstLine = content.trimStart().split(/\r?\n/, 1)[0];
+  return firstLine.match(/^#\s+(.+?)\s*#*\s*$/)?.[1] ?? '';
 }
 
-function createDescription(content, fallback) {
-  const text = content
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/!\[[^\]]*\]\([^)]+\)/g, '')
-    .replace(/!\[\[[^\]]+\]\]/g, '')
-    .replace(/\[[^\]]+\]\([^)]+\)/g, '')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/<[^>]+>/g, '')
-    .replace(/[*_`~]/g, '')
-    .trim();
+export function removeDuplicateTitle(content, title) {
+  const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return content.replace(new RegExp(`^\\s*#\\s+${escapedTitle}\\s*#*[ \\t]*(?:\\r?\\n+|$)`), '');
+}
 
-  const firstParagraph = text
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.replace(/\s+/g, ' ').trim())
-    .find(Boolean);
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-  const description = firstParagraph || fallback;
-  return description.length > 160 ? `${description.slice(0, 160).trim()}...` : description;
+/**
+ * 发布前检查草稿的标题、导语和 slug。
+ * 没写 title 时取正文第一行的「# 标题」；两处都没有、或者没写 description，就拒绝发布。
+ */
+export function validateDraftMetadata(metadata, body) {
+  const title = stripQuotes(metadata.title) || extractHeadingTitle(body);
+  if (!title) {
+    throw new BlogError('草稿缺少标题：在 frontmatter 里写 title，或者在正文第一行写「# 标题」。');
+  }
+
+  const description = stripQuotes(metadata.description);
+  if (!description) {
+    throw new BlogError(
+      '草稿缺少 description：在 frontmatter 里手写一句导语（建议 40 字以内），它会用作副标题和首页摘要。',
+    );
+  }
+
+  const slug = stripQuotes(metadata.slug);
+  if (slug && !SLUG_PATTERN.test(slug)) {
+    throw new BlogError(`slug 只能用小写英文、数字和连字符：${slug}`);
+  }
+
+  return { description, slug, title };
+}
+
+/**
+ * 把指向其他文章的链接改写成站内地址 /posts/<id>/：
+ * - Markdown 链接里的 YYYYMMDD.md（前面是什么相对路径都行，可以带 #小标题）；
+ * - Obsidian 的 [[YYYYMMDD]]、[[YYYYMMDD|显示文字]]、[[YYYYMMDD#小标题]]。
+ * targets 是「YYYYMMDD → { id, title }」，找不到对应文章时报错。代码块里的内容不改。
+ */
+export function rewritePostLinks(content, targets) {
+  const resolve = (compact) => {
+    const target = targets.get(compact);
+    if (!target) {
+      throw new BlogError(`正文链接到了 ${compact}，但没有找到这篇已发布的文章。`);
+    }
+    return target;
+  };
+  const anchor = (heading = '') => (heading ? `#${slugifyHeading(heading)}` : '');
+
+  return content
+    .split(/(^(?:```|~~~)[\s\S]*?^(?:```|~~~)[^\S\r\n]*$)/m)
+    .map((part, index) => {
+      if (index % 2 === 1) return part;
+
+      return part
+        .replace(
+          /(?<!!)\[([^\]\n]*)\]\(<?((?![a-z][a-z0-9+.-]*:)[^)\s>]*?)(\d{8})\.mdx?(#[^)\s>]*)?>?((?:\s+"[^"]*")?)\)/gi,
+          (match, text, prefix, compact, hash = '', title) => {
+            if (prefix && !/[\\/]$/.test(prefix)) return match;
+            return `[${text}](/posts/${resolve(compact).id}/${hash}${title})`;
+          },
+        )
+        .replace(/(?<!!)\[\[(\d{8})(?:\.mdx?)?(?:#([^|\]]*))?(?:\|([^\]]*))?\]\]/g, (match, compact, heading, label) => {
+          const target = resolve(compact);
+          return `[${label?.trim() || target.title}](/posts/${target.id}/${anchor(heading?.trim())})`;
+        });
+    })
+    .join('');
+}
+
+/** 和站点生成小标题 id 的规则一致：小写，去掉标点，空格换成连字符。 */
+function slugifyHeading(heading) {
+  return heading
+    .toLowerCase()
+    .trim()
+    .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '')
+    .replace(/\s/g, '-');
+}
+
+/** 已发布文章的日期和站内 id（有 slug 用 slug，没有就用文件名）。 */
+async function listPublishedPostLinks() {
+  const files = await listMarkdownFiles(postsDir);
+  const posts = [];
+
+  for (const file of files) {
+    const filePath = path.join(postsDir, file);
+    const { frontmatter } = splitFrontmatter(await readFile(filePath, 'utf8'));
+    const metadata = parseFrontmatter(frontmatter);
+    const name = file.replace(/\.(md|mdx)$/i, '');
+
+    posts.push({
+      compact: name,
+      id: stripQuotes(metadata.slug) || name,
+      path: relative(filePath),
+      title: stripQuotes(metadata.title) || name,
+    });
+  }
+
+  return posts;
 }
 
 async function listMarkdownFiles(directory) {

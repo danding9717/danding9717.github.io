@@ -1,0 +1,30 @@
+---
+import type { Topic } from '../utils/posts';
+import { getTopicUrl } from '../utils/posts';
+
+interface Props {
+  topics: Pick<Topic, 'name' | 'posts'>[] | string[];
+  /** 在每个主题后用括号注明篇数。 */
+  showCount?: boolean;
+  /** 写在最前面的说明文字，例如「主题：」。 */
+  label?: string;
+}
+
+const { showCount = false, label } = Astro.props;
+const topics = Astro.props.topics.map((topic) =>
+  typeof topic === 'string' ? { name: topic, count: 0 } : { name: topic.name, count: topic.posts.length },
+);
+---
+
+<p class="topic-list">
+  {label}
+  {
+    topics.map((topic, index) => (
+      <>
+        {index > 0 && '、'}
+        <a href={getTopicUrl(topic.name)}>{topic.name}</a>
+        {showCount && <span class="topic-count">（{topic.count}）</span>}
+      </>
+    ))
+  }
+</p>
