@@ -7,6 +7,7 @@ export const SITE_INTRO = '我是 Dan Hu。在学做生意，也写下过程中�
 export const GITHUB_URL = 'https://github.com/danding9717';
 
 export const NAV_LINKS = [
+  { href: '/archive/', label: '归档' },
   { href: '/about/', label: '关于' },
   { href: '/now/', label: 'Now' },
 ];

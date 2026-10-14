@@ -1,6 +1,6 @@
 ---
 import Header from '../components/Header.astro';
-import { AUTHOR_NAME, GITHUB_URL, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { AUTHOR_NAME, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
 import { withBase } from '../utils/paths';
 import '../styles/global.css';
 
@@ -107,19 +107,6 @@ const imageUrl = new URL(withBase('/logo.png'), Astro.site);
     <main class="site-main">
       <slot />
     </main>
-    <footer class="site-footer">
-      <p>订阅更新：<a href={withBase('/rss.xml')}>RSS</a></p>
-      <div class="footer-row">
-        <p class="footer-links">
-          <a href={withBase('/about/')}>关于</a>
-          <span aria-hidden="true">·</span>
-          <a href={GITHUB_URL}>GitHub</a>
-          <span aria-hidden="true">·</span>
-          <a href={withBase('/search/')}>搜索</a>
-        </p>
-        <p>&copy; {new Date().getFullYear()} {AUTHOR_NAME}</p>
-      </div>
-    </footer>
     <script is:inline>
       (() => {
         const themeKey = 'dan-ding-theme';

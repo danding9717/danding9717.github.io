@@ -11,9 +11,9 @@ export default defineConfig({
   // 两篇文章用了同一个 slug、或两个页面生成同一个网址时，直接让构建失败。
   prerenderConflictBehavior: 'error',
   integrations: [mdx(), sitemap()],
-  // 旧的归档页并入首页的「全部文章」。
+  // 搜索并入归档页。
   redirects: {
-    '/archive': '/',
+    '/search': '/archive/',
   },
   markdown: {
     processor: satteri({

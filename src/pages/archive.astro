@@ -1,0 +1,162 @@
+---
+import PageHeading from '../components/PageHeading.astro';
+import PostIndex from '../components/PostIndex.astro';
+import PostRow from '../components/PostRow.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getFeaturedPosts, getPublishedPosts } from '../utils/posts';
+import { withBase } from '../utils/paths';
+
+const posts = await getPublishedPosts();
+const featured = getFeaturedPosts(posts);
+const pagefindBase = withBase('/pagefind/');
+---
+
+<BaseLayout title="归档" description="全部文章，按年份排列，也可以全文搜索。">
+  <PageHeading title="归档" />
+
+  {/* 学 Naval 的归档页：标题下一条带放大镜的下划线输入框；有输入时用搜索结果替换下面的列表。 */}
+  <form class="archive-search" role="search" action="" data-pagefind={pagefindBase} hidden>
+    <svg class="archive-search-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="6.75" cy="6.75" r="4.75" fill="none" stroke="currentColor" stroke-width="1.75" />
+      <path d="m10.25 10.25 4 4" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" />
+    </svg>
+    <input
+      class="archive-search-input"
+      type="search"
+      name="q"
+      aria-label="搜索文章"
+      autocomplete="off"
+      spellcheck="false"
+    />
+  </form>
+
+  <div class="archive-results" aria-live="polite" hidden></div>
+
+  <div class="archive-list">
+    {
+      posts.length === 0 ? (
+        <p class="empty-state">还没有发布文章，第一篇正在路上。</p>
+      ) : (
+        <>
+          {featured.length > 0 && (
+            <section class="home-section" aria-labelledby="archive-featured">
+              <h2 class="section-title" id="archive-featured">精选</h2>
+              <ol class="post-rows">
+                {featured.map((post) => (
+                  <PostRow post={post} />
+                ))}
+              </ol>
+            </section>
+          )}
+          <PostIndex posts={posts} headingLevel={2} />
+        </>
+      )
+    }
+  </div>
+
+  <script is:inline>
+    (() => {
+      const form = document.querySelector('.archive-search');
+      const input = form.querySelector('input');
+      const pagefindBase = form.dataset.pagefind;
+      const results = document.querySelector('.archive-results');
+      const list = document.querySelector('.archive-list');
+      let pagefind;
+      let latest = 0;
+
+      // 没开 JS 时不显示搜索框，只留文章列表。
+      form.hidden = false;
+
+      async function loadPagefind() {
+        pagefind ??= import(`${pagefindBase}pagefind.js`).then(async (module) => {
+          await module.init?.();
+          return module;
+        });
+        return pagefind;
+      }
+
+      function showList(show) {
+        list.hidden = !show;
+        results.hidden = show;
+      }
+
+      function message(text) {
+        const p = document.createElement('p');
+        p.className = 'archive-message';
+        p.textContent = text;
+        results.replaceChildren(p);
+      }
+
+      async function run(query) {
+        const id = ++latest;
+        if (!query) {
+          results.replaceChildren();
+          showList(true);
+          return;
+        }
+        showList(false);
+
+        let found;
+        try {
+          const api = await loadPagefind();
+          const search = await api.search(query);
+          found = await Promise.all(search.results.slice(0, 30).map((result) => result.data()));
+        } catch {
+          if (id === latest) message('搜索索引还没有生成，请先运行 npm run build。');
+          return;
+        }
+        if (id !== latest) return;
+        if (found.length === 0) {
+          message(`没有找到和「${query}」相关的文章。`);
+          return;
+        }
+
+        const items = found.map((item) => {
+          const li = document.createElement('li');
+          li.className = 'archive-result';
+          const link = document.createElement('a');
+          link.href = item.url;
+          link.textContent = item.meta?.title ?? item.url;
+          const excerpt = document.createElement('p');
+          // 摘要来自本站构建出的索引，只带 <mark> 高亮。
+          excerpt.innerHTML = item.excerpt;
+          li.append(link, excerpt);
+          return li;
+        });
+        const ol = document.createElement('ol');
+        ol.className = 'archive-result-list';
+        ol.append(...items);
+        const count = document.createElement('p');
+        count.className = 'archive-message';
+        count.textContent = `找到 ${found.length} 篇`;
+        results.replaceChildren(count, ol);
+      }
+
+      let timer;
+      input.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => run(input.value.trim()), 150);
+      });
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        clearTimeout(timer);
+        run(input.value.trim());
+      });
+      input.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || !input.value) return;
+        event.preventDefault();
+        clearTimeout(timer);
+        input.value = '';
+        run('');
+      });
+      input.addEventListener('focus', () => loadPagefind().catch(() => {}), { once: true });
+
+      // 支持 /archive/?q=关键词 直接打开搜索结果。
+      const initial = new URLSearchParams(location.search).get('q');
+      if (initial) {
+        input.value = initial;
+        run(initial.trim());
+      }
+    })();
+  </script>
+</BaseLayout>
