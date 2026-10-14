@@ -1,7 +1,7 @@
 ---
 layout: ../layouts/PageLayout.astro
 title: Now
-description: Dan Ding 最近在做的事、在读的书和在想的问题。
+description: 胡少卿最近在做的事、在读的书和在想的问题。
 updated: 2026-10-14
 ---
 
