@@ -1,14 +1,24 @@
 ---
+import PageHeading from '../components/PageHeading.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
+import { AUTHOR_NAME } from '../consts';
+import { withBase } from '../utils/paths';
 ---
 
-<BaseLayout title="About" description="About Dan and this personal blog.">
-  <article class="page-heading prose">
-    <h1>About</h1>
+<BaseLayout title="关于" description={`关于 ${AUTHOR_NAME} 和这个博客。`}>
+  <PageHeading eyebrow="About" title="关于" />
+  <article class="prose">
     <p>你好，我是 Dan。</p>
-    <p>
-      这里是我的个人博客，用来记录技术、商业、阅读、生活和长期思考。
-    </p>
-    <p>后续我会自己修改。</p>
+    <p>这里是我的个人博客，用来记录技术、商业、阅读、生活和长期思考。</p>
+
+    <h2>这个博客</h2>
+    <ul>
+      <li>文章按<a href={withBase('/categories/')}>分类</a>和<a href={withBase('/tags/')}>标签</a>整理，也可以在<a href={withBase('/archive/')}>归档</a>里按时间浏览。</li>
+      <li>想找某篇文章，可以用<a href={withBase('/search/')}>站内搜索</a>。</li>
+      <li>想及时看到更新，可以订阅 <a href={withBase('/rss.xml')}>RSS</a>。</li>
+    </ul>
+
+    <h2>联系我</h2>
+    <p>GitHub：<a href="https://github.com/danding9717">@danding9717</a></p>
   </article>
 </BaseLayout>

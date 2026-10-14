@@ -1,9 +1,9 @@
 ---
-import { getCollection } from 'astro:content';
+import PageHeading from '../components/PageHeading.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { formatDate, getPostUrl, isPublished, sortPosts } from '../utils/posts';
+import { formatDate, getPostUrl, getPublishedPosts } from '../utils/posts';
 
-const posts = sortPosts((await getCollection('posts')).filter(isPublished));
+const posts = await getPublishedPosts();
 const groupedPosts = Object.entries(
   posts.reduce<Record<string, typeof posts>>((groups, post) => {
     const year = String(post.data.date.getFullYear());
@@ -11,24 +11,28 @@ const groupedPosts = Object.entries(
     groups[year].push(post);
     return groups;
   }, {}),
-);
+).sort(([a], [b]) => Number(b) - Number(a));
 ---
 
-<BaseLayout title="Archive" description="All published notes grouped by year.">
-  <article class="page-heading">
-    <h1>Archive</h1>
-  </article>
+<BaseLayout title="归档" description="按年份整理的全部文章。">
+  <PageHeading
+    title="归档"
+    description={posts.length ? `共 ${posts.length} 篇文章` : '还没有发布文章。'}
+  />
 
   <div class="archive">
     {
       groupedPosts.map(([year, yearPosts]) => (
         <section class="archive-year" id={year}>
-          <h2>{year}</h2>
+          <h2>
+            {year}
+            <span class="archive-count">{yearPosts.length} 篇</span>
+          </h2>
           <ol class="archive-list">
             {yearPosts.map((post) => (
               <li>
                 <time datetime={post.data.date.toISOString()}>
-                  {formatDate(post.data.date)}
+                  {formatDate(post.data.date).slice(5)}
                 </time>
                 <a href={getPostUrl(post)}>{post.data.title}</a>
               </li>

@@ -1,6 +1,7 @@
 ---
+import PostMeta from './PostMeta.astro';
 import type { Post } from '../utils/posts';
-import { formatDate, getExcerpt, getPostUrl } from '../utils/posts';
+import { formatDate, getExcerpt, getPostUrl, getReadingMinutes } from '../utils/posts';
 
 interface Props {
   post: Post;
@@ -8,32 +9,19 @@ interface Props {
 
 const { post } = Astro.props;
 const url = getPostUrl(post);
-const date = formatDate(post.data.date);
-const excerpt = getExcerpt(post);
 ---
 
 <article class="post-preview">
-  <p class="post-date">
-    <time datetime={post.data.date.toISOString()}>{date}</time>
+  <p class="post-info">
+    <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time>
+    <span aria-hidden="true">·</span>
+    <span>{getReadingMinutes(post)} 分钟阅读</span>
   </p>
-  <div class="post-preview-content">
-    <h2 class="post-title">
-      <a href={url}>{post.data.title}</a>
-    </h2>
-    <p class="post-meta">
-      <span class="tag" aria-label={`Category: ${post.data.category}`}>
-        {post.data.category}
-      </span>
-      {
-        post.data.tags.map((tag) => (
-          <span class="tag" aria-label={`Tag: ${tag}`}>
-            {tag}
-          </span>
-        ))
-      }
-    </p>
-    <p class="post-excerpt">
-      <a class="post-excerpt-link" href={url}>{excerpt}</a>
-    </p>
-  </div>
+  <h2 class="post-title">
+    <a href={url}>{post.data.title}</a>
+  </h2>
+  <p class="post-excerpt">
+    <a class="post-excerpt-link" href={url}>{getExcerpt(post)}</a>
+  </p>
+  <PostMeta post={post} />
 </article>

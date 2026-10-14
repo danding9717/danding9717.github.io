@@ -1,0 +1,20 @@
+---
+import PageHeading from '../../components/PageHeading.astro';
+import PostList from '../../components/PostList.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCategories, getPublishedPosts, type TaxonomyTerm } from '../../utils/posts';
+
+export async function getStaticPaths() {
+  return getCategories(await getPublishedPosts()).map((term) => ({
+    params: { slug: term.slug },
+    props: { term },
+  }));
+}
+
+const { term } = Astro.props as { term: TaxonomyTerm };
+---
+
+<BaseLayout title={`分类：${term.name}`} description={`「${term.name}」分类下的文章。`}>
+  <PageHeading eyebrow="分类" title={term.name} description={`${term.posts.length} 篇文章`} />
+  <PostList posts={term.posts} label={`${term.name} 分类下的文章`} />
+</BaseLayout>

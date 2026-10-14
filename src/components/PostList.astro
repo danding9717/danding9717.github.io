@@ -1,0 +1,24 @@
+---
+import PostPreview from './PostPreview.astro';
+import type { Post } from '../utils/posts';
+
+interface Props {
+  posts: Post[];
+  label: string;
+  emptyText?: string;
+}
+
+const { posts, label, emptyText = '这里还没有文章。' } = Astro.props;
+---
+
+{
+  posts.length ? (
+    <section class="post-list" aria-label={label}>
+      {posts.map((post) => (
+        <PostPreview post={post} />
+      ))}
+    </section>
+  ) : (
+    <p class="empty-state">{emptyText}</p>
+  )
+}

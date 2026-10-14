@@ -1,19 +1,49 @@
 ---
-import { getCollection } from 'astro:content';
-import PostPreview from '../components/PostPreview.astro';
+import PostList from '../components/PostList.astro';
+import TermCloud from '../components/TermCloud.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
-import { isPublished, sortPosts } from '../utils/posts';
+import { AUTHOR_NAME, SITE_DESCRIPTION, SITE_INTRO, SITE_TITLE } from '../consts';
+import { getCategories, getCategoryUrl, getPublishedPosts } from '../utils/posts';
 import { withBase } from '../utils/paths';
 
-const posts = sortPosts((await getCollection('posts')).filter(isPublished));
+const LATEST_COUNT = 8;
+const posts = await getPublishedPosts();
+const latestPosts = posts.slice(0, LATEST_COUNT);
+const categories = getCategories(posts);
 ---
 
 <BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
-  <section class="post-list" aria-label="Latest posts">
-    {posts.map((post) => <PostPreview post={post} />)}
+  <section class="hero">
+    <p class="eyebrow">你好，我是 {AUTHOR_NAME}</p>
+    <h1>{SITE_INTRO}</h1>
+    <p class="hero-links">
+      <a href={withBase('/about/')}>关于我</a>
+      <a href={withBase('/rss.xml')}>RSS 订阅</a>
+    </p>
   </section>
-  <p class="archive-entry">
-    <a href={withBase('/archive/')}>ARCHIVE &rarr;</a>
-  </p>
+
+  {
+    categories.length > 0 && (
+      <section class="home-section" aria-labelledby="home-categories">
+        <h2 class="section-title" id="home-categories">分类</h2>
+        <TermCloud terms={categories} getUrl={getCategoryUrl} />
+      </section>
+    )
+  }
+
+  <section class="home-section" aria-labelledby="home-latest">
+    <h2 class="section-title" id="home-latest">最新文章</h2>
+    <PostList
+      posts={latestPosts}
+      label="最新文章"
+      emptyText="还没有发布文章，第一篇正在路上。"
+    />
+    {
+      posts.length > LATEST_COUNT && (
+        <p class="more-link">
+          <a href={withBase('/archive/')}>查看全部 {posts.length} 篇文章 &rarr;</a>
+        </p>
+      )
+    }
+  </section>
 </BaseLayout>

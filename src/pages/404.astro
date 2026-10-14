@@ -1,0 +1,14 @@
+---
+import PageHeading from '../components/PageHeading.astro';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { withBase } from '../utils/paths';
+---
+
+<BaseLayout title="页面不存在" description="你访问的页面不存在。">
+  <PageHeading eyebrow="404" title="页面不存在" description="这个链接可能已经失效，或者文章被移走了。">
+    <p class="hero-links">
+      <a href={withBase('/')}>回到首页</a>
+      <a href={withBase('/search/')}>搜索文章</a>
+    </p>
+  </PageHeading>
+</BaseLayout>

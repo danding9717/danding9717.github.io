@@ -17,6 +17,18 @@ npm run build
 npm run preview
 ```
 
+`npm run build` 会在 Astro 构建完成后运行 Pagefind 生成站内搜索索引，所以搜索页只在构建产物（`npm run preview`）里可用，`npm run dev` 下会提示索引未生成。
+
+## 站点页面
+
+- `/`：自我介绍、分类入口和最新 8 篇文章，没有文章时显示空状态。
+- `/posts/<文件名>/`：文章页，包含阅读时长、目录（有两个以上二、三级标题时显示）、上一篇 / 下一篇和同标签的相关文章。
+- `/categories/`、`/categories/<分类>/`：按 `category` 浏览。
+- `/tags/`、`/tags/<标签>/`：按 `tags` 浏览。
+- `/archive/`：按年份列出全部文章。
+- `/search/`：站内全文搜索（Pagefind）。
+- `/about/`、`/rss.xml`、`/sitemap-index.xml`、404 页。
+
 ## 写文章
 
 日常写作入口为 `src/content/drafts/`。可直接用 Obsidian 或 Typora 在此目录写作；发布脚本会自动补全 frontmatter、整理图片并移动至正式文章目录。
@@ -130,15 +142,16 @@ draft: false
 ---
 ```
 
-- `draft: true` 的文章不会出现在首页、归档页和 RSS 中。
+- `draft: true` 的文章不会出现在首页、归档、分类、标签、搜索和 RSS 中。
+- 分类和标签的地址由名称转成小写、空格换成 `-` 得到，例如标签 `Daily Notes` 对应 `/tags/daily-notes/`。
 - 文件名会成为文章地址，例如 `2026-05-29-first-note.md` 会生成 `/posts/2026-05-29-first-note/`。
 - 图片可以放在 `public/images/`，在文章里用 `/images/文件名` 引用。
 
 ## 修改博客信息
 
-- 博客名称、简介和作者名在 `src/consts.ts`。
-- 全站样式在 `src/styles/global.css`。
-- 导航在 `src/components/Header.astro`。
+- 博客名称、首页介绍语、作者名和导航菜单在 `src/consts.ts`。
+- 三套主题的颜色变量在 `src/styles/themes.css`，布局和排版在 `src/styles/global.css`。
+- 关于页内容在 `src/pages/about.astro`。
 
 ## GitHub Pages 部署
 

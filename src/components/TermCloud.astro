@@ -1,0 +1,24 @@
+---
+import type { TaxonomyTerm } from '../utils/posts';
+
+interface Props {
+  terms: TaxonomyTerm[];
+  getUrl: (name: string) => string;
+  prefix?: string;
+}
+
+const { terms, getUrl, prefix = '' } = Astro.props;
+---
+
+<ul class="term-cloud">
+  {
+    terms.map((term) => (
+      <li>
+        <a class="term" href={getUrl(term.name)}>
+          <span>{prefix}{term.name}</span>
+          <span class="term-count">{term.posts.length}</span>
+        </a>
+      </li>
+    ))
+  }
+</ul>

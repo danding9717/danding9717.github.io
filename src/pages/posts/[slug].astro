@@ -1,54 +1,121 @@
 ---
-import { getCollection, render } from 'astro:content';
+import { render } from 'astro:content';
+import PostMeta from '../../components/PostMeta.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { formatDate, isPublished, sortPosts } from '../../utils/posts';
-import { withBase } from '../../utils/paths';
+import {
+  formatDate,
+  getPostUrl,
+  getPublishedPosts,
+  getReadingMinutes,
+  getRelatedPosts,
+  type Post,
+} from '../../utils/posts';
 
 export async function getStaticPaths() {
-  const posts = sortPosts((await getCollection('posts')).filter(isPublished));
+  const posts = await getPublishedPosts();
 
-  return posts.map((post) => ({
+  return posts.map((post, index) => ({
     params: { slug: post.id },
-    props: { post },
+    props: {
+      post,
+      newer: posts[index - 1],
+      older: posts[index + 1],
+      related: getRelatedPosts(post, posts),
+    },
   }));
 }
 
-const { post } = Astro.props;
-const { Content } = await render(post);
+interface Props {
+  post: Post;
+  newer?: Post;
+  older?: Post;
+  related: Post[];
+}
+
+const { post, newer, older, related } = Astro.props;
+const { Content, headings } = await render(post);
+const tocHeadings = headings.filter((heading) => heading.depth === 2 || heading.depth === 3);
+const showToc = tocHeadings.length >= 2;
 ---
 
-<BaseLayout title={post.data.title} description={post.data.description}>
-  <article class="post-detail">
-    <p class="post-date">
-      <time datetime={post.data.date.toISOString()}>
-        {formatDate(post.data.date)}
-      </time>
-    </p>
-    <div class="post-detail-content">
+<BaseLayout
+  title={post.data.title}
+  description={post.data.description}
+  type="article"
+  publishedTime={post.data.date}
+  wide={showToc}
+>
+  <div class:list={['post-layout', { 'has-toc': showToc }]}>
+    <article class="post-detail" data-pagefind-body>
       <header class="post-header">
-        <h1>{post.data.title}</h1>
-        <p class="post-meta">
-          <span class="tag" aria-label={`Category: ${post.data.category}`}>
-            {post.data.category}
-          </span>
-          {
-            post.data.tags.map((tag) => (
-              <span class="tag" aria-label={`Tag: ${tag}`}>
-                {tag}
-              </span>
-            ))
-          }
+        <p class="post-info" data-pagefind-ignore>
+          <time datetime={post.data.date.toISOString()}>
+            {formatDate(post.data.date)}
+          </time>
+          <span aria-hidden="true">·</span>
+          <span>{getReadingMinutes(post)} 分钟阅读</span>
         </p>
+        <h1 data-pagefind-meta="title">{post.data.title}</h1>
+        <PostMeta post={post} />
       </header>
 
       <div class="prose">
         <Content />
       </div>
+    </article>
 
-      <footer class="post-backlinks">
-        <a href={withBase('/')}>返回首页</a>
-        <a href={withBase('/archive/')}>返回 Archive</a>
-      </footer>
-    </div>
-  </article>
+    {
+      showToc && (
+        <aside class="post-toc" aria-label="文章目录">
+          <p class="post-toc-title">目录</p>
+          <ol>
+            {tocHeadings.map((heading) => (
+              <li class={`toc-depth-${heading.depth}`}>
+                <a href={`#${heading.slug}`}>{heading.text}</a>
+              </li>
+            ))}
+          </ol>
+        </aside>
+      )
+    }
+
+    <footer class="post-footer">
+      {
+        (newer || older) && (
+          <nav class="post-pager" aria-label="上一篇和下一篇">
+            {older ? (
+              <a class="pager-link" href={getPostUrl(older)}>
+                <span class="pager-label">&larr; 上一篇</span>
+                <span class="pager-title">{older.data.title}</span>
+              </a>
+            ) : (
+              <span />
+            )}
+            {newer && (
+              <a class="pager-link pager-next" href={getPostUrl(newer)}>
+                <span class="pager-label">下一篇 &rarr;</span>
+                <span class="pager-title">{newer.data.title}</span>
+              </a>
+            )}
+          </nav>
+        )
+      }
+
+      {
+        related.length > 0 && (
+          <section class="related-posts" aria-labelledby="related-title">
+            <h2 class="section-title" id="related-title">相关文章</h2>
+            <ul>
+              {related.map((item) => (
+                <li>
+                  <a href={getPostUrl(item)}>{item.data.title}</a>
+                  <time datetime={item.data.date.toISOString()}>{formatDate(item.data.date)}</time>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )
+      }
+    </footer>
+  </div>
 </BaseLayout>
