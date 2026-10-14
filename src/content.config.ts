@@ -7,7 +7,6 @@ const posts = defineCollection({
   schema: z.object({
     title: z.string(),
     date: z.coerce.date(),
-    category: z.string().optional(),
     tags: z.array(z.string()).default([]),
     description: z.string(),
     // 可选的短网址，例如 compound → /posts/compound/。发布后不要再改。

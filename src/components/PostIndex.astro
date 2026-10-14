@@ -1,6 +1,6 @@
 ---
 import PostRow from './PostRow.astro';
-import type { Post } from '../utils/posts';
+import { getYear, type Post } from '../utils/posts';
 
 interface Props {
   posts: Post[];
@@ -9,7 +9,7 @@ interface Props {
 const { posts } = Astro.props;
 const years = Object.entries(
   posts.reduce<Record<string, Post[]>>((groups, post) => {
-    const year = String(post.data.date.getFullYear());
+    const year = getYear(post.data.date);
     (groups[year] ??= []).push(post);
     return groups;
   }, {}),

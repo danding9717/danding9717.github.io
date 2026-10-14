@@ -5,10 +5,10 @@ dist/
 .env
 .env.*
 !.env.example
-.blog-trash/
 
-# Drafts are private (never committed). The nested .gitignore inside drafts/ allows
-# tracking the ignore file itself while ignoring all actual draft content and assets.
+# 草稿只存在本机，不进 git。
 src/content/drafts/
-!src/content/drafts/.gitignore
+
+# 旧版 myblog 留在本机的回收站和导出目录，可能有没公开的草稿。
+.blog-trash/
 exports/
