@@ -378,8 +378,10 @@ time {
   padding-bottom: 1.2em;
   color: var(--secondary);
   border-bottom: 1px solid var(--line);
-  font-size: 1.1em;
-  line-height: 1.7;
+  font-size: 1.25em;
+  /* 中文字体多半没有 500，用 600 才能在各系统上都看出加粗。 */
+  font-weight: 600;
+  line-height: 1.6;
   text-wrap: pretty;
 }
 

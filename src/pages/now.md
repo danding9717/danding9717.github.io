@@ -1,7 +1,7 @@
 ---
 layout: ../layouts/PageLayout.astro
 title: Now
-description: 这一页记录我最近在做什么。如果你很久没联系我，可以先看看这里。
+description: 我这个月在做的事
 updated: 2026-10-14
 ---
 
