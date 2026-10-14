@@ -20,10 +20,7 @@ const years = Object.entries(
   {
     years.map(([year, yearPosts]) => (
       <section class="year-group" id={year} aria-label={`${year} 年`}>
-        <h3 class="year-title">
-          {year}
-          <span class="year-count">{yearPosts.length} 篇</span>
-        </h3>
+        <h3 class="section-title">{year}</h3>
         <ol class="post-rows">
           {yearPosts.map((post) => (
             <PostRow post={post} shortDate />

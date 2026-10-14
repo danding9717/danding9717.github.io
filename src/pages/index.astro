@@ -1,67 +1,68 @@
 ---
 import PostIndex from '../components/PostIndex.astro';
-import PostMeta from '../components/PostMeta.astro';
-import TermCloud from '../components/TermCloud.astro';
+import PostRow from '../components/PostRow.astro';
+import TopicList from '../components/TopicList.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { AUTHOR_NAME, SITE_DESCRIPTION, SITE_INTRO, SITE_TITLE } from '../consts';
 import {
   formatDate,
+  getFeaturedPosts,
   getPostUrl,
   getPublishedPosts,
   getReadingMinutes,
-  getTagUrl,
-  getTags,
+  getTopics,
 } from '../utils/posts';
 import { withBase } from '../utils/paths';
 
 const posts = await getPublishedPosts();
 const [latest] = posts;
-const tags = getTags(posts);
+const featured = getFeaturedPosts(posts);
+const topics = getTopics(posts);
 ---
 
 <BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
-  <section class="intro">
-    <p>
-      我是 {AUTHOR_NAME}，{SITE_INTRO}
-    </p>
-    <p class="intro-links">
-      <a href={withBase('/about/')}>关于我</a>
-      <a href={withBase('/now/')}>我最近在做什么</a>
-      <a href={withBase('/rss.xml')}>RSS 订阅</a>
-    </p>
-  </section>
+  <p class="intro">我是 {AUTHOR_NAME}，{SITE_INTRO}</p>
 
   {
     latest ? (
       <>
         <section class="home-section" aria-labelledby="home-latest">
           <h2 class="section-title" id="home-latest">最新</h2>
-          <article class="featured-post">
+          <a class="featured-post" href={getPostUrl(latest)}>
             <p class="post-info">
               <time datetime={latest.data.date.toISOString()}>{formatDate(latest.data.date)}</time>
-              <span aria-hidden="true">·</span>
+              <span aria-hidden="true"> · </span>
               <span>{getReadingMinutes(latest)} 分钟阅读</span>
             </p>
-            <h3 class="featured-title">
-              <a href={getPostUrl(latest)}>{latest.data.title}</a>
-            </h3>
+            <h3 class="featured-title">{latest.data.title}</h3>
             {latest.data.description && <p class="featured-lede">{latest.data.description}</p>}
-            <PostMeta post={latest} />
-            <p class="featured-more">
-              <a href={getPostUrl(latest)}>继续阅读 &rarr;</a>
-            </p>
-          </article>
+            <p class="featured-more">继续阅读 &rarr;</p>
+          </a>
         </section>
 
-        {tags.length > 0 && (
-          <section class="home-section" aria-labelledby="home-topics">
-            <h2 class="section-title" id="home-topics">主题</h2>
-            <TermCloud terms={tags} getUrl={getTagUrl} prefix="#" />
+        {featured.length > 0 && (
+          <section class="home-section" aria-labelledby="home-featured">
+            <h2 class="section-title" id="home-featured">精选</h2>
+            <ol class="post-rows">
+              {featured.map((post) => (
+                <PostRow post={post} />
+              ))}
+            </ol>
           </section>
         )}
 
-        <section class="home-section" aria-labelledby="home-all">
-          <h2 class="section-title" id="home-all">全部文章</h2>
+        {topics.length > 0 && (
+          <section class="home-section" aria-labelledby="home-topics">
+            <h2 class="section-title" id="home-topics">主题</h2>
+            <TopicList topics={topics} />
+          </section>
+        )}
+
+        <section class="home-section" id="posts" aria-labelledby="home-all">
+          <div class="section-head">
+            <h2 class="section-title" id="home-all">全部文章</h2>
+            <a class="section-link" href={withBase('/search/')}>搜索</a>
+          </div>
           <PostIndex posts={posts} />
         </section>
       </>

@@ -1,25 +1,29 @@
 ---
 import { render } from 'astro:content';
-import PostMeta from '../../components/PostMeta.astro';
+import PostRow from '../../components/PostRow.astro';
+import TopicList from '../../components/TopicList.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import {
+  descriptionRepeatsBody,
   formatDate,
+  getBacklinks,
   getPostUrl,
   getPublishedPosts,
   getReadingMinutes,
   getRelatedPosts,
   type Post,
 } from '../../utils/posts';
+import { withBase } from '../../utils/paths';
 
 export async function getStaticPaths() {
   const posts = await getPublishedPosts();
+  const backlinks = getBacklinks(posts);
 
-  return posts.map((post, index) => ({
+  return posts.map((post) => ({
     params: { slug: post.id },
     props: {
       post,
-      newer: posts[index - 1],
-      older: posts[index + 1],
+      backlinks: backlinks.get(post.id) ?? [],
       related: getRelatedPosts(post, posts),
     },
   }));
@@ -27,15 +31,17 @@ export async function getStaticPaths() {
 
 interface Props {
   post: Post;
-  newer?: Post;
-  older?: Post;
+  backlinks: Post[];
   related: Post[];
 }
 
-const { post, newer, older, related } = Astro.props;
+const { post, backlinks, related } = Astro.props;
 const { Content, headings } = await render(post);
-const tocHeadings = headings.filter((heading) => heading.depth === 2 || heading.depth === 3);
-const showToc = tocHeadings.length >= 2;
+// 只有二级标题达到 4 个的长文（通常是合集）才在正文上方放目录。
+const sections = headings.filter((heading) => heading.depth === 2);
+const showToc = sections.length >= 4;
+const showSubtitle = !descriptionRepeatsBody(post);
+const topics = [...new Set(post.data.tags)];
 ---
 
 <BaseLayout
@@ -43,79 +49,70 @@ const showToc = tocHeadings.length >= 2;
   description={post.data.description}
   type="article"
   publishedTime={post.data.date}
-  wide={showToc}
+  crumb={{ href: withBase('/#posts'), label: '文章' }}
 >
-  <div class:list={['post-layout', { 'has-toc': showToc }]}>
-    <article class="post-detail" data-pagefind-body>
-      <header class="post-header">
-        <p class="post-info" data-pagefind-ignore>
-          <time datetime={post.data.date.toISOString()}>
-            {formatDate(post.data.date)}
-          </time>
-          <span aria-hidden="true">·</span>
-          <span>{getReadingMinutes(post)} 分钟阅读</span>
-        </p>
-        <h1 data-pagefind-meta="title">{post.data.title}</h1>
-        <PostMeta post={post} />
-      </header>
-
-      <div class="prose">
-        <Content />
-      </div>
-    </article>
+  <article class="post" data-pagefind-body>
+    <header class="post-header">
+      <p class="post-info" data-pagefind-ignore>
+        <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time>
+        <span aria-hidden="true"> · </span>
+        <span>{getReadingMinutes(post)} 分钟阅读</span>
+      </p>
+      <h1 data-pagefind-meta="title">{post.data.title}</h1>
+      {showSubtitle && <p class="post-subtitle">{post.data.description}</p>}
+    </header>
 
     {
       showToc && (
-        <aside class="post-toc" aria-label="文章目录">
-          <p class="post-toc-title">目录</p>
+        <nav class="post-toc" aria-label="文章目录" data-pagefind-ignore>
           <ol>
-            {tocHeadings.map((heading) => (
-              <li class={`toc-depth-${heading.depth}`}>
+            {sections.map((heading) => (
+              <li>
                 <a href={`#${heading.slug}`}>{heading.text}</a>
               </li>
             ))}
           </ol>
-        </aside>
+        </nav>
       )
     }
 
-    <footer class="post-footer">
-      {
-        (newer || older) && (
-          <nav class="post-pager" aria-label="上一篇和下一篇">
-            {older ? (
-              <a class="pager-link" href={getPostUrl(older)}>
-                <span class="pager-label">&larr; 上一篇</span>
-                <span class="pager-title">{older.data.title}</span>
-              </a>
-            ) : (
-              <span />
-            )}
-            {newer && (
-              <a class="pager-link pager-next" href={getPostUrl(newer)}>
-                <span class="pager-label">下一篇 &rarr;</span>
-                <span class="pager-title">{newer.data.title}</span>
-              </a>
-            )}
-          </nav>
-        )
-      }
+    <div class="prose">
+      <Content />
+    </div>
+  </article>
 
-      {
-        related.length > 0 && (
-          <section class="related-posts" aria-labelledby="related-title">
-            <h2 class="section-title" id="related-title">相关文章</h2>
-            <ul>
-              {related.map((item) => (
-                <li>
-                  <a href={getPostUrl(item)}>{item.data.title}</a>
-                  <time datetime={item.data.date.toISOString()}>{formatDate(item.data.date)}</time>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )
-      }
-    </footer>
-  </div>
+  <footer class="post-footer">
+    {
+      backlinks.length > 0 && (
+        <section class="post-section" aria-labelledby="backlinks-title">
+          <h2 class="section-title" id="backlinks-title">提到这篇的文章</h2>
+          <ul class="backlinks">
+            {backlinks.map((item) => (
+              <li>
+                <a class="backlink" href={getPostUrl(item)}>
+                  <span class="backlink-title">{item.data.title}</span>
+                  {item.data.description && <span class="backlink-lede">{item.data.description}</span>}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    {
+      related.length > 0 && (
+        <section class="post-section" aria-labelledby="related-title">
+          <h2 class="section-title" id="related-title">相关文章</h2>
+          <ol class="post-rows">
+            {related.map((item) => (
+              <PostRow post={item} />
+            ))}
+          </ol>
+        </section>
+      )
+    }
+
+    {topics.length > 0 && <TopicList topics={topics} label="主题：" />}
+  </footer>
 </BaseLayout>

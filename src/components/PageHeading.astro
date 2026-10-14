@@ -1,15 +1,13 @@
 ---
 interface Props {
   title: string;
-  eyebrow?: string;
   description?: string;
 }
 
-const { title, eyebrow, description } = Astro.props;
+const { title, description } = Astro.props;
 ---
 
 <header class="page-heading">
-  {eyebrow && <p class="eyebrow">{eyebrow}</p>}
   <h1>{title}</h1>
   {description && <p class="page-description">{description}</p>}
   <slot />

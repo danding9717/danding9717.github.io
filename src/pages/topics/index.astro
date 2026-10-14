@@ -1,0 +1,13 @@
+---
+import PageHeading from '../../components/PageHeading.astro';
+import TopicList from '../../components/TopicList.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getPublishedPosts, getTopics } from '../../utils/posts';
+
+const topics = getTopics(await getPublishedPosts());
+---
+
+<BaseLayout title="主题" description="按主题浏览文章。">
+  <PageHeading title="主题" />
+  {topics.length ? <TopicList topics={topics} showCount /> : <p class="empty-state">还没有主题。</p>}
+</BaseLayout>

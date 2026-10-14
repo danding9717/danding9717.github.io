@@ -1,7 +1,6 @@
 ---
 layout: ../layouts/PageLayout.astro
-title: 最近
-eyebrow: Now
+title: 近况
 description: Dan Ding 最近在做的事、在读的书和在想的问题。
 updated: 2026-10-14
 ---

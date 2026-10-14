@@ -1,13 +1,12 @@
 /*
- * 黑白两套主题的颜色变量，通过 <html data-theme> 切换。
+ * 浅色、深色两套主题的颜色变量。
  * 配色参考 Claude 的 Typora 主题：暖灰中性色 + 陶土色强调。
+ * 页面脚本会在 <html> 上写 data-theme；没开 JS 时由下面的媒体查询跟随系统。
  */
 
 :root {
   color-scheme: light;
   --bg: #f9f9f7;
-  --surface: #f4f4f2;
-  --surface-solid: #ffffff;
   --card: #ffffff;
   --hover: #ecece9;
   --text: #2d2d2b;
@@ -25,17 +24,11 @@
   --code-text: #8a3f27;
   --pre-bg: rgb(255 255 255 / 72%);
   --quote-border: rgb(204 125 94 / 42%);
-  --nav-bg: rgb(249 249 247 / 82%);
-  --switch-active: #ffffff;
-  --shadow-sm: 0 18px 48px -28px rgb(45 45 43 / 28%), 0 8px 18px -14px rgb(45 45 43 / 16%), 0 0 0 0.5px rgb(31 30 29 / 18%);
-  --shadow-md: 0 22px 58px -30px rgb(45 45 43 / 34%), 0 10px 22px -15px rgb(45 45 43 / 20%), 0 0 0 0.5px rgb(31 30 29 / 28%);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #2d2d2b;
-  --surface: #373735;
-  --surface-solid: #3d3d3a;
   --card: #373735;
   --hover: #41413e;
   --text: #f9f9f7;
@@ -53,8 +46,29 @@
   --code-text: #f0a486;
   --pre-bg: rgb(55 55 53 / 86%);
   --quote-border: rgb(204 125 94 / 48%);
-  --nav-bg: rgb(55 55 53 / 82%);
-  --switch-active: rgb(249 249 247 / 16%);
-  --shadow-sm: 0 20px 52px -26px rgb(0 0 0 / 58%), 0 8px 20px -14px rgb(0 0 0 / 42%), 0 0 0 0.5px rgb(222 220 209 / 18%);
-  --shadow-md: 0 24px 62px -28px rgb(0 0 0 / 66%), 0 10px 24px -14px rgb(0 0 0 / 48%), 0 0 0 0.5px rgb(222 220 209 / 28%);
+}
+
+/* 没开 JS 的访客：跟随系统深色设置。数值和上面深色主题保持一致。 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #2d2d2b;
+    --card: #373735;
+    --hover: #41413e;
+    --text: #f9f9f7;
+    --muted: #b2b2b0;
+    --secondary: #d0d0cc;
+    --accent: #cc7d5e;
+    --accent-text: #dfa087;
+    --accent-soft: rgb(204 125 94 / 18%);
+    --selection: rgb(204 125 94 / 34%);
+    --line: rgb(249 249 247 / 15%);
+    --line-strong: rgb(249 249 247 / 30%);
+    --table-th-border: rgb(249 249 247 / 48%);
+    --table-td-border: rgb(249 249 247 / 24%);
+    --code-bg: rgb(249 249 247 / 7%);
+    --code-text: #f0a486;
+    --pre-bg: rgb(55 55 53 / 86%);
+    --quote-border: rgb(204 125 94 / 48%);
+  }
 }

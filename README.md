@@ -21,14 +21,17 @@ npm run preview
 
 ## 站点页面
 
-- `/`：参考 Steph Ango 的首页结构：一句自我介绍，突出最新一篇，然后是主题标签，最后按年份列出全部文章（标题、日期和一句导语，导语取自 frontmatter 的 `description`）。没有文章时显示空状态。
-- `/posts/<文件名>/`：文章页，包含阅读时长、目录（有两个以上二、三级标题时显示）、上一篇 / 下一篇和同标签的相关文章。
-- `/categories/`、`/categories/<分类>/`：按 `category` 浏览。
-- `/tags/`、`/tags/<标签>/`：按 `tags` 浏览。
-- `/archive/`：按年份列出全部文章。
-- `/now/`：“我最近在做什么”页面，内容直接改 `src/pages/now.md`，改完顺手更新里面的 `updated` 日期。
-- `/search/`：站内全文搜索（Pagefind）。
-- `/about/`、`/rss.xml`、`/sitemap-index.xml`、404 页。
+整体参考 Naval（nav.al）和 Steph Ango（stephango.com）：一篇只讲一个观点，全站只有一张安静的文章清单。文章用「主题」（frontmatter 里的 `tags`）组织，不再有分类页。
+
+- `/`：一句自我介绍 → 最新一篇（整张卡片可点）→ 精选（带「精选」主题的文章达到 3 篇才显示，最多 5 篇）→ 主题 → 按年份列出全部文章，右侧有搜索入口。没有文章时显示空状态。
+- `/posts/<文件名>/`：文章页。标题上方是日期和阅读时长，下面是副标题（`description`，和正文第一段重复时不显示）。二级标题达到 4 个时在正文上方放一个简单目录。文末依次是「提到这篇的文章」（反向链接）、「相关文章」（按共同主题，最多 3 篇）和「主题：……」。
+- `/topics/`、`/topics/<主题>/`：按主题浏览。
+- `/now/`：近况页，内容直接改 `src/pages/now.md`，改完顺手更新里面的 `updated` 日期。
+- `/search/`：站内全文搜索（Pagefind），入口在首页「全部文章」右侧和页脚。
+- `/about/`、`/rss.xml`（全文输出）、`/sitemap-index.xml`、404 页。
+- `/archive/` 跳转到首页。
+
+文章之间互相链接时写 `/posts/<文件名>/`。构建时会检查这些链接，链到不存在的文章会直接报错。
 
 ## 写文章
 
@@ -137,14 +140,15 @@ Obsidian 建议把附件位置设为“当前文件同名 assets 文件夹”。
 title: "文章标题"
 date: 2026-05-29
 category: "Daily"
-tags: ["Life", "AI", "Reading"]
-description: "文章摘要"
+tags: ["写作", "精选"]
+description: "一句手写导语，用作副标题和首页摘要"
 draft: false
 ---
 ```
 
-- `draft: true` 的文章不会出现在首页、归档、分类、标签、搜索和 RSS 中。
-- 分类和标签的地址由名称转成小写、空格换成 `-` 得到，例如标签 `Daily Notes` 对应 `/tags/daily-notes/`。
+- `draft: true` 的文章不会出现在首页、主题页、搜索和 RSS 中。
+- `tags` 在站上叫「主题」。主题的地址由名称转成小写、空格换成 `-` 得到，例如 `Daily Notes` 对应 `/topics/daily-notes/`，中文主题直接出现在地址里。挂上「精选」的文章会出现在首页的精选区。
+- `category` 可以不写，站上不再显示。
 - 文件名会成为文章地址，例如 `2026-05-29-first-note.md` 会生成 `/posts/2026-05-29-first-note/`。
 - 图片可以放在 `public/images/`，在文章里用 `/images/文件名` 引用。
 
