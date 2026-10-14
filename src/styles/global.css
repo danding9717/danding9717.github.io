@@ -80,8 +80,7 @@ time {
 
 /* ---------- 页面框架 ---------- */
 
-.site-main,
-.site-footer {
+.site-main {
   width: min(100% - var(--gutter) * 2, var(--measure));
   margin-right: auto;
   margin-left: auto;
@@ -162,40 +161,7 @@ time {
 
 .site-main {
   flex: 1;
-  padding-bottom: 4rem;
-}
-
-.site-footer {
-  padding: 1.5rem 0 2.5rem;
-  color: var(--muted);
-  border-top: 1px solid var(--line);
-  font-size: 0.875rem;
-  line-height: 1.7;
-}
-
-.site-footer p {
-  margin: 0;
-}
-
-.site-footer a {
-  color: var(--muted);
-}
-
-.site-footer a:hover {
-  color: var(--accent-text);
-}
-
-.footer-row {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.25rem 1rem;
-  margin-top: 0.25rem;
-}
-
-.footer-links {
-  display: flex;
-  gap: 0.5em;
+  padding-bottom: clamp(4rem, 10vw, 7rem);
 }
 
 /* ---------- 标题和分区 ---------- */
@@ -228,18 +194,6 @@ time {
   font-size: 0.875em;
   font-weight: var(--font-strong);
   line-height: 1.5;
-}
-
-.section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.section-link {
-  color: var(--muted);
-  font-size: 0.875em;
 }
 
 .empty-state {
@@ -756,30 +710,78 @@ time {
   text-decoration: none;
 }
 
-/* ---------- 搜索 ---------- */
+/* ---------- 归档页搜索 ---------- */
 
-.search-box {
-  --pagefind-ui-scale: 0.9;
-  --pagefind-ui-primary: var(--accent-text);
-  --pagefind-ui-text: var(--text);
-  --pagefind-ui-background: var(--card);
-  --pagefind-ui-border: var(--line-strong);
-  --pagefind-ui-tag: var(--hover);
-  --pagefind-ui-border-width: 1px;
-  --pagefind-ui-border-radius: var(--radius);
-  --pagefind-ui-font: var(--font-sans);
-  min-height: 200px;
+.archive-search {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 3rem;
   color: var(--muted);
+  border-bottom: 1px solid var(--line-strong);
+  transition: border-color 160ms ease;
 }
 
-.search-box .pagefind-ui__search-clear {
-  color: var(--muted);
+.archive-search[hidden] {
+  display: none;
+}
+
+.archive-search:focus-within {
+  border-color: var(--text);
+}
+
+.archive-search-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: 0 0 auto;
+}
+
+.archive-search-input {
+  flex: 1;
+  appearance: none;
+  min-width: 0;
+  padding: 0.6rem 0;
+  color: var(--text);
   background: transparent;
   border: 0;
-  cursor: pointer;
+  border-radius: 0;
+  font: inherit;
+  outline: none;
 }
 
-.search-box mark {
+/* 不要浏览器自带的蓝色清除按钮；按 Esc 或删掉文字即可回到列表。 */
+.archive-search-input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.archive-message {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  font-size: 0.875em;
+}
+
+.archive-result-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.archive-result {
+  margin-bottom: 1.5rem;
+}
+
+.archive-result a {
+  font-weight: var(--font-strong);
+  text-decoration: none;
+}
+
+.archive-result p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.9375em;
+}
+
+.archive-result mark {
   color: inherit;
   background: var(--accent-soft);
   border-radius: 3px;

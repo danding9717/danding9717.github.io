@@ -12,7 +12,6 @@ import {
   getReadingMinutes,
   getTopics,
 } from '../utils/posts';
-import { withBase } from '../utils/paths';
 
 const posts = await getPublishedPosts();
 const [latest] = posts;
@@ -59,10 +58,7 @@ const topics = getTopics(posts);
         )}
 
         <section class="home-section" id="posts" aria-labelledby="home-all">
-          <div class="section-head">
-            <h2 class="section-title" id="home-all">全部文章</h2>
-            <a class="section-link" href={withBase('/search/')}>搜索</a>
-          </div>
+          <h2 class="section-title" id="home-all">全部文章</h2>
           <PostIndex posts={posts} />
         </section>
       </>
