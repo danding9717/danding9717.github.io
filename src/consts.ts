@@ -12,7 +12,7 @@ export const GISCUS = {
   repo: 'danding9717/danding9717.github.io',
   repoId: 'R_kgDOSrN57g',
   category: 'Announcements',
-  categoryId: '',
+  categoryId: 'DIC_kwDOSrN57s4DIciz',
 };
 
 export const NAV_LINKS = [
