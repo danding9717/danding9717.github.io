@@ -1,8 +1,8 @@
 @import './themes.css';
 
 :root {
-  /* 页头、正文、页脚同宽。根字号 18px 时约 630px，每行约 35 个汉字。 */
-  --measure: 35rem;
+  /* 正文栏宽。根字号 18px 时约 740px，每行约 41 个汉字，和 Naval 的栏宽比例接近。 */
+  --measure: 41rem;
   --gutter: 24px;
   --radius: 8px;
   --font-sans:
