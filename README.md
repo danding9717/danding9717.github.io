@@ -170,16 +170,23 @@ draft: false
 
 ## GitHub Pages 部署
 
-项目按 GitHub Pages 用户主页配置。确认 `astro.config.mjs` 中 `site` 为 `https://danding9717.github.io`，并在仓库 Settings → Pages 将 Source 设为 GitHub Actions。推送到 `main` 后，工作流自动构建并发布到：
+博客网址只写在根目录的 `site.config.mjs` 里（`SITE_URL`），网站构建和 `myblog` 的 `/preview` 都从这里读取，不要在别处再写一遍。当前是：
 
 ```text
 https://danding9717.github.io/
 ```
 
-如果以后改为项目站点，例如 `https://yourname.github.io/personal-blog/`，需要在 `astro.config.mjs` 中额外设置：
+在仓库 Settings → Pages 将 Source 设为 GitHub Actions。推送到 `main` 后，工作流自动构建并发布。
 
-```js
-base: '/personal-blog',
-```
+## 换成自己的域名
 
-并相应调整站内链接或使用 Astro 的 base-aware 路径策略。
+以 `example.com` 为例：
+
+1. 把 `site.config.mjs` 里的 `SITE_URL` 改成 `https://example.com`（末尾不加 `/`），提交并推送到 `main`。
+2. 在仓库 Settings → Pages → Custom domain 填入 `example.com` 并保存。用 GitHub Actions 部署时不需要 `CNAME` 文件，以这里的设置为准。
+3. 在域名商的 DNS 设置里添加记录：
+   - 根域名 `example.com`：4 条 A 记录，指向 `185.199.108.153`、`185.199.109.153`、`185.199.110.153`、`185.199.111.153`。
+   - 如果也用 `www.example.com`：一条 CNAME 记录，指向 `danding9717.github.io`。
+4. 等 DNS 生效、GitHub 检查通过后，在同一页勾选 Enforce HTTPS。
+
+完成后访问 `danding9717.github.io` 的旧链接会由 GitHub 自动跳到新域名，文章地址不变。RSS、sitemap 和每页的 canonical 链接会在下一次构建时换成新域名。
