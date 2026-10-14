@@ -28,14 +28,22 @@ export async function getPublishedPosts() {
   return sortPosts((await getCollection('posts')).filter(isPublished));
 }
 
+/** 日期按北京时间显示：myblog 写进 date 的是带时区的发布时间，而构建网站的机器在 UTC。 */
+const TIME_ZONE = 'Asia/Shanghai';
+
 export function formatDate(date: Date) {
   return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: TIME_ZONE,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   })
     .format(date)
     .replaceAll('/', '-');
+}
+
+export function getYear(date: Date) {
+  return formatDate(date).slice(0, 4);
 }
 
 export function getPostUrl(post: Post) {
@@ -158,10 +166,7 @@ function toPlainText(markdown: string) {
     .replace(/\s+/g, '');
 }
 
-/**
- * 副标题（description）和正文第一段开头一样时返回 true。
- * myblog 没写 description 时会截取第一段自动生成，这种情况下不再重复显示。
- */
+/** 副标题（description）和正文第一段开头一样时返回 true，这时页面上不重复显示。 */
 export function descriptionRepeatsBody(post: Post) {
   const description = toPlainText(post.data.description).replace(/(\.\.\.|…)$/, '');
   if (!description) return true;

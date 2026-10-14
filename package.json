@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "myblog": "scripts/admin.mjs"
+    "myblog": "scripts/myblog.mjs"
   },
   "scripts": {
     "dev": "astro dev",
@@ -12,8 +12,8 @@
     "build": "astro check && astro build && pagefind --site dist",
     "check": "astro check",
     "preview": "astro preview",
-    "admin": "node scripts/admin.mjs",
-    "admin:install": "node scripts/install-admin.mjs",
+    "myblog": "node scripts/myblog.mjs",
+    "myblog:install": "node scripts/myblog.mjs install",
     "test": "node --test"
   },
   "dependencies": {
