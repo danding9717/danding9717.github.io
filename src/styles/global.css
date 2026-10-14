@@ -368,13 +368,20 @@ time {
   margin: 0 0 2em;
 }
 
+/* 标题上方的日期用等宽字，和页头的名字呼应。 */
+.post-header .post-info {
+  font-family: var(--font-mono);
+}
+
 .post-subtitle {
   margin: 0.6em 0 0;
   padding-bottom: 1.2em;
   color: var(--secondary);
   border-bottom: 1px solid var(--line);
-  font-size: 1.1em;
-  line-height: 1.7;
+  font-size: 1.125em;
+  /* 中文字体多半没有 500，用 600 才能在各系统上都看出加粗。 */
+  font-weight: 600;
+  line-height: 1.6;
   text-wrap: pretty;
 }
 
