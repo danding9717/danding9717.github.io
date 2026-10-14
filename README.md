@@ -17,6 +17,22 @@ npm run build
 npm run preview
 ```
 
+`npm run build` 会在 Astro 构建完成后运行 Pagefind 生成站内搜索索引，所以搜索页只在构建产物（`npm run preview`）里可用，`npm run dev` 下会提示索引未生成。
+
+## 站点页面
+
+整体参考 Naval（nav.al）和 Steph Ango（stephango.com）：一篇只讲一个观点，全站只有一张安静的文章清单。文章用「主题」（frontmatter 里的 `tags`）组织，不再有分类页。
+
+- `/`：一句自我介绍 → 最新一篇（整张卡片可点）→ 精选（带「精选」主题的文章达到 3 篇才显示，最多 5 篇）→ 主题 → 按年份列出全部文章，右侧有搜索入口。没有文章时显示空状态。
+- `/posts/<文件名>/`：文章页。标题上方是日期和阅读时长，下面是副标题（`description`，和正文第一段重复时不显示）。二级标题达到 4 个时在正文上方放一个简单目录。文末依次是「提到这篇的文章」（反向链接）、「相关文章」（按共同主题，最多 3 篇）和「主题：……」。
+- `/topics/`、`/topics/<主题>/`：按主题浏览。
+- `/now/`：Now 页（最近在做什么），内容直接改 `src/pages/now.md`，改完顺手更新里面的 `updated` 日期。
+- `/search/`：站内全文搜索（Pagefind），入口在首页「全部文章」右侧和页脚。
+- `/about/`、`/rss.xml`（全文输出）、`/sitemap-index.xml`、404 页。
+- `/archive/` 跳转到首页。
+
+文章之间互相链接时写 `/posts/<文件名>/`。构建时会检查这些链接，链到不存在的文章会直接报错。
+
 ## 写文章
 
 日常写作入口为 `src/content/drafts/`。可直接用 Obsidian 或 Typora 在此目录写作；发布脚本会自动补全 frontmatter、整理图片并移动至正式文章目录。
@@ -76,10 +92,18 @@ OpenAI provider 默认模型为 `gpt-5.5`，xAI provider 默认模型为 `grok-4
 
 发布完成后，后台会询问是否立即同步到 GitHub。按 `Enter` 同步，按 `Esc` 稍后处理；部署完成后可用 `/preview` 查看线上版本。
 
+`/write` 新建的草稿会预先写好 `title:`、`description:`、`tags: []`、`slug:` 四行，动笔前先想好标题（一句观点）和一句导语。
+
+发布前会检查：
+
+- 必须有标题。frontmatter 没写 `title` 时，取正文第一行的 `# 标题`，并从正文里删掉这一行。
+- 必须有 `description`，自己写一句导语，它会用作副标题、首页摘要和 RSS 摘要。没写就不能发布。
+- `slug` 可选，只能用小写英文、数字和连字符，不能和已有文章重复。写了 `slug: compound`，文章地址就是 `/posts/compound/`，发布后不要再改。
+
 发布时会自动：
 
-- 为文章生成 frontmatter。
-- 从正文第一段提取摘要。
+- 为文章生成 frontmatter。`tags` 支持 `["写作", "精选"]` 和一行一个 `- 写作` 两种写法。
+- 把指向其他文章的链接改成站内地址：`[文字](20260529.md)`（前面是什么相对路径都行）和 `[[20260529]]`、`[[20260529|文字]]` 都会改成 `/posts/<文章地址>/`。链到还没发布的文章时会报错停下。
 - 把 `20260529.assets/` 里的图片复制到 `public/images/20260529/`。
 - 把图片路径改成 `/images/20260529/文件名`。
 - 把文章移动到 `src/content/posts/`。
@@ -124,21 +148,25 @@ Obsidian 建议把附件位置设为“当前文件同名 assets 文件夹”。
 title: "文章标题"
 date: 2026-05-29
 category: "Daily"
-tags: ["Life", "AI", "Reading"]
-description: "文章摘要"
+tags: ["写作", "精选"]
+description: "一句手写导语，用作副标题和首页摘要"
+slug: "compound"
 draft: false
 ---
 ```
 
-- `draft: true` 的文章不会出现在首页、归档页和 RSS 中。
-- 文件名会成为文章地址，例如 `2026-05-29-first-note.md` 会生成 `/posts/2026-05-29-first-note/`。
+- `draft: true` 的文章不会出现在首页、主题页、搜索和 RSS 中。
+- `tags` 在站上叫「主题」。主题的地址由名称转成小写、空格换成 `-` 得到，例如 `Daily Notes` 对应 `/topics/daily-notes/`，中文主题直接出现在地址里。挂上「精选」的文章会出现在首页的精选区。
+- `category` 可以不写，站上不再显示。
+- `slug` 可选，写了就用它当文章地址（例如 `/posts/compound/`），两篇文章用了同一个 slug 时构建会失败。
+- 没写 `slug` 时，文件名就是文章地址，例如 `2026-05-29-first-note.md` 会生成 `/posts/2026-05-29-first-note/`。
 - 图片可以放在 `public/images/`，在文章里用 `/images/文件名` 引用。
 
 ## 修改博客信息
 
-- 博客名称、简介和作者名在 `src/consts.ts`。
-- 全站样式在 `src/styles/global.css`。
-- 导航在 `src/components/Header.astro`。
+- 博客名称、首页介绍语、作者名和导航菜单在 `src/consts.ts`。
+- 浅色、深色两套主题的颜色变量在 `src/styles/themes.css`，代码高亮配色在 `src/styles/code-themes.mjs`，布局和排版在 `src/styles/global.css`。没有手动选过主题的访客会跟随系统的深浅色设置。
+- 关于页内容在 `src/pages/about.astro`。
 
 ## GitHub Pages 部署
 

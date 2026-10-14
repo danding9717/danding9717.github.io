@@ -1,0 +1,74 @@
+/*
+ * 浅色、深色两套主题的颜色变量。
+ * 配色参考 Claude 的 Typora 主题：暖灰中性色 + 陶土色强调。
+ * 页面脚本会在 <html> 上写 data-theme；没开 JS 时由下面的媒体查询跟随系统。
+ */
+
+:root {
+  color-scheme: light;
+  --bg: #f9f9f7;
+  --card: #ffffff;
+  --hover: #ecece9;
+  --text: #2d2d2b;
+  --muted: #6b6b67;
+  --secondary: #4f4f4b;
+  --accent: #cc7d5e;
+  --accent-text: #a95639;
+  --accent-soft: rgb(204 125 94 / 12%);
+  --selection: rgb(204 125 94 / 28%);
+  --line: rgb(45 45 43 / 15%);
+  --line-strong: rgb(45 45 43 / 30%);
+  --table-th-border: rgb(45 45 43 / 48%);
+  --table-td-border: rgb(45 45 43 / 24%);
+  --code-bg: rgb(45 45 43 / 5.5%);
+  --code-text: #8a3f27;
+  --pre-bg: rgb(255 255 255 / 72%);
+  --quote-border: rgb(204 125 94 / 42%);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #2d2d2b;
+  --card: #373735;
+  --hover: #41413e;
+  --text: #f9f9f7;
+  --muted: #b2b2b0;
+  --secondary: #d0d0cc;
+  --accent: #cc7d5e;
+  --accent-text: #dfa087;
+  --accent-soft: rgb(204 125 94 / 18%);
+  --selection: rgb(204 125 94 / 34%);
+  --line: rgb(249 249 247 / 15%);
+  --line-strong: rgb(249 249 247 / 30%);
+  --table-th-border: rgb(249 249 247 / 48%);
+  --table-td-border: rgb(249 249 247 / 24%);
+  --code-bg: rgb(249 249 247 / 7%);
+  --code-text: #f0a486;
+  --pre-bg: rgb(55 55 53 / 86%);
+  --quote-border: rgb(204 125 94 / 48%);
+}
+
+/* 没开 JS 的访客：跟随系统深色设置。数值和上面深色主题保持一致。 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #2d2d2b;
+    --card: #373735;
+    --hover: #41413e;
+    --text: #f9f9f7;
+    --muted: #b2b2b0;
+    --secondary: #d0d0cc;
+    --accent: #cc7d5e;
+    --accent-text: #dfa087;
+    --accent-soft: rgb(204 125 94 / 18%);
+    --selection: rgb(204 125 94 / 34%);
+    --line: rgb(249 249 247 / 15%);
+    --line-strong: rgb(249 249 247 / 30%);
+    --table-th-border: rgb(249 249 247 / 48%);
+    --table-td-border: rgb(249 249 247 / 24%);
+    --code-bg: rgb(249 249 247 / 7%);
+    --code-text: #f0a486;
+    --pre-bg: rgb(55 55 53 / 86%);
+    --quote-border: rgb(204 125 94 / 48%);
+  }
+}

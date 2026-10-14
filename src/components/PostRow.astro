@@ -1,0 +1,20 @@
+---
+import type { Post } from '../utils/posts';
+import { formatDate, getPostUrl } from '../utils/posts';
+
+interface Props {
+  post: Post;
+  /** 按年分组时只显示月-日。 */
+  shortDate?: boolean;
+}
+
+const { post, shortDate = false } = Astro.props;
+const date = formatDate(post.data.date);
+---
+
+<li class:list={['post-row', { 'post-row-short': shortDate }]}>
+  <time class="post-row-date" datetime={post.data.date.toISOString()}>
+    {shortDate ? date.slice(5) : date}
+  </time>
+  <a class="post-row-title" href={getPostUrl(post)}>{post.data.title}</a>
+</li>
