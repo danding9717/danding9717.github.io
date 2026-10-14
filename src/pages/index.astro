@@ -1,5 +1,4 @@
 ---
-import PostIndex from '../components/PostIndex.astro';
 import PostRow from '../components/PostRow.astro';
 import TopicList from '../components/TopicList.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
@@ -56,11 +55,6 @@ const topics = getTopics(posts);
             <TopicList topics={topics} />
           </section>
         )}
-
-        <section class="home-section" id="posts" aria-labelledby="home-all">
-          <h2 class="section-title" id="home-all">全部文章</h2>
-          <PostIndex posts={posts} />
-        </section>
       </>
     ) : (
       <p class="empty-state">还没有发布文章，第一篇正在路上。</p>
