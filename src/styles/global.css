@@ -253,9 +253,12 @@ time {
   text-wrap: pretty;
 }
 
-/* 跟在摘要末尾的小字，像 Naval 的「More ›」。 */
+/* 跟在摘要末尾的小字，像 Naval 的「More ›」。没有摘要时不留空。 */
+.featured-desc {
+  margin-right: 0.25em;
+}
+
 .featured-more {
-  margin-left: 0.3em;
   color: var(--muted);
   font-size: 0.875em;
   white-space: nowrap;

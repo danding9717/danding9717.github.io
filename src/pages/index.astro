@@ -29,12 +29,12 @@ const topics = getTopics(posts);
           <a class="featured-post" href={getPostUrl(latest)}>
             <h3 class="featured-title">{latest.data.title}</h3>
             <p class="featured-lede">
-              {latest.data.description}
+              {latest.data.description && <span class="featured-desc">{latest.data.description}</span>}
               <span class="featured-more">继续阅读<span aria-hidden="true">&nbsp;&rsaquo;</span></span>
             </p>
             <p class="post-info">
-              <time datetime={latest.data.date.toISOString()}>{formatDate(latest.data.date)}</time>
-              <span aria-hidden="true"> · </span>
+              <time datetime={latest.data.date.toISOString()}>{formatDate(latest.data.date)}</time>{' '}
+              <span aria-hidden="true">·</span>{' '}
               <span>{getReadingMinutes(latest)} 分钟阅读</span>
             </p>
           </a>
