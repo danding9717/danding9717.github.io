@@ -7,5 +7,5 @@ export const GITHUB_URL = 'https://github.com/danding9717';
 
 export const NAV_LINKS = [
   { href: '/about/', label: '关于' },
-  { href: '/now/', label: '近况' },
+  { href: '/now/', label: 'Now' },
 ];
