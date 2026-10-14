@@ -3,7 +3,7 @@ import PostIndex from '../components/PostIndex.astro';
 import PostRow from '../components/PostRow.astro';
 import TopicList from '../components/TopicList.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { AUTHOR_NAME, SITE_DESCRIPTION, SITE_INTRO, SITE_TITLE } from '../consts';
+import { SITE_DESCRIPTION, SITE_INTRO, SITE_TITLE } from '../consts';
 import {
   formatDate,
   getFeaturedPosts,
@@ -21,7 +21,7 @@ const topics = getTopics(posts);
 ---
 
 <BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
-  <p class="intro">我是 {AUTHOR_NAME}，{SITE_INTRO}</p>
+  <p class="intro">{SITE_INTRO}</p>
 
   {
     latest ? (
