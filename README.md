@@ -92,10 +92,18 @@ OpenAI provider 默认模型为 `gpt-5.5`，xAI provider 默认模型为 `grok-4
 
 发布完成后，后台会询问是否立即同步到 GitHub。按 `Enter` 同步，按 `Esc` 稍后处理；部署完成后可用 `/preview` 查看线上版本。
 
+`/write` 新建的草稿会预先写好 `title:`、`description:`、`tags: []`、`slug:` 四行，动笔前先想好标题（一句观点）和一句导语。
+
+发布前会检查：
+
+- 必须有标题。frontmatter 没写 `title` 时，取正文第一行的 `# 标题`，并从正文里删掉这一行。
+- 必须有 `description`，自己写一句导语，它会用作副标题、首页摘要和 RSS 摘要。没写就不能发布。
+- `slug` 可选，只能用小写英文、数字和连字符，不能和已有文章重复。写了 `slug: compound`，文章地址就是 `/posts/compound/`，发布后不要再改。
+
 发布时会自动：
 
-- 为文章生成 frontmatter。
-- 从正文第一段提取摘要。
+- 为文章生成 frontmatter。`tags` 支持 `["写作", "精选"]` 和一行一个 `- 写作` 两种写法。
+- 把指向其他文章的链接改成站内地址：`[文字](20260529.md)`（前面是什么相对路径都行）和 `[[20260529]]`、`[[20260529|文字]]` 都会改成 `/posts/<文章地址>/`。链到还没发布的文章时会报错停下。
 - 把 `20260529.assets/` 里的图片复制到 `public/images/20260529/`。
 - 把图片路径改成 `/images/20260529/文件名`。
 - 把文章移动到 `src/content/posts/`。
@@ -142,6 +150,7 @@ date: 2026-05-29
 category: "Daily"
 tags: ["写作", "精选"]
 description: "一句手写导语，用作副标题和首页摘要"
+slug: "compound"
 draft: false
 ---
 ```
@@ -149,7 +158,8 @@ draft: false
 - `draft: true` 的文章不会出现在首页、主题页、搜索和 RSS 中。
 - `tags` 在站上叫「主题」。主题的地址由名称转成小写、空格换成 `-` 得到，例如 `Daily Notes` 对应 `/topics/daily-notes/`，中文主题直接出现在地址里。挂上「精选」的文章会出现在首页的精选区。
 - `category` 可以不写，站上不再显示。
-- 文件名会成为文章地址，例如 `2026-05-29-first-note.md` 会生成 `/posts/2026-05-29-first-note/`。
+- `slug` 可选，写了就用它当文章地址（例如 `/posts/compound/`），两篇文章用了同一个 slug 时构建会失败。
+- 没写 `slug` 时，文件名就是文章地址，例如 `2026-05-29-first-note.md` 会生成 `/posts/2026-05-29-first-note/`。
 - 图片可以放在 `public/images/`，在文章里用 `/images/文件名` 引用。
 
 ## 修改博客信息

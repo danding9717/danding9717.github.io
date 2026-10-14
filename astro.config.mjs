@@ -7,6 +7,8 @@ import { claudeDark, claudeLight } from './src/styles/code-themes.mjs';
 export default defineConfig({
   site: 'https://danding9717.github.io',
   output: 'static',
+  // 两篇文章用了同一个 slug、或两个页面生成同一个网址时，直接让构建失败。
+  prerenderConflictBehavior: 'error',
   integrations: [mdx(), sitemap()],
   // 旧的归档页并入首页的「全部文章」。
   redirects: {
