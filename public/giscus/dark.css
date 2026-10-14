@@ -1,0 +1,127 @@
+/*
+ * 评论区（giscus）的深色配色：暖灰 + 陶土色，数值对应 src/styles/themes.css 的深色主题。
+ * 改自 giscus 自带的 dark 主题，变量名不能改。
+ *
+ * MIT License
+ * Copyright (c) 2018 GitHub Inc.
+ * https://github.com/primer/primitives/blob/main/LICENSE
+ */
+
+:root {
+  --font-family-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei",
+    system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+main {
+  /* 评论里的代码高亮，沿用 GitHub 的深色配色。 */
+  --color-prettylights-syntax-comment: #8b949e;
+  --color-prettylights-syntax-constant: #79c0ff;
+  --color-prettylights-syntax-entity: #d2a8ff;
+  --color-prettylights-syntax-storage-modifier-import: #c9d1d9;
+  --color-prettylights-syntax-entity-tag: #7ee787;
+  --color-prettylights-syntax-keyword: #ff7b72;
+  --color-prettylights-syntax-string: #a5d6ff;
+  --color-prettylights-syntax-variable: #ffa657;
+  --color-prettylights-syntax-brackethighlighter-unmatched: #f85149;
+  --color-prettylights-syntax-invalid-illegal-text: #f0f6fc;
+  --color-prettylights-syntax-invalid-illegal-bg: #8e1519;
+  --color-prettylights-syntax-carriage-return-text: #f0f6fc;
+  --color-prettylights-syntax-carriage-return-bg: #b62324;
+  --color-prettylights-syntax-string-regexp: #7ee787;
+  --color-prettylights-syntax-markup-list: #f2cc60;
+  --color-prettylights-syntax-markup-heading: #1f6feb;
+  --color-prettylights-syntax-markup-italic: #c9d1d9;
+  --color-prettylights-syntax-markup-bold: #c9d1d9;
+  --color-prettylights-syntax-markup-deleted-text: #ffdcd7;
+  --color-prettylights-syntax-markup-deleted-bg: #67060c;
+  --color-prettylights-syntax-markup-inserted-text: #aff5b4;
+  --color-prettylights-syntax-markup-inserted-bg: #033a16;
+  --color-prettylights-syntax-markup-changed-text: #ffdfb6;
+  --color-prettylights-syntax-markup-changed-bg: #5a1e02;
+  --color-prettylights-syntax-markup-ignored-text: #c9d1d9;
+  --color-prettylights-syntax-markup-ignored-bg: #1158c7;
+  --color-prettylights-syntax-meta-diff-range: #d2a8ff;
+  --color-prettylights-syntax-brackethighlighter-angle: #8b949e;
+  --color-prettylights-syntax-sublimelinter-gutter-mark: #484f58;
+  --color-prettylights-syntax-constant-other-reference-link: #a5d6ff;
+
+  /* 普通按钮：卡片灰底细边，悬停变成页面的悬停灰。 */
+  --color-btn-text: #f9f9f7;
+  --color-btn-bg: #373735;
+  --color-btn-border: rgb(249 249 247 / 15%);
+  --color-btn-shadow: 0 0 transparent;
+  --color-btn-inset-shadow: 0 0 transparent;
+  --color-btn-hover-bg: #41413e;
+  --color-btn-hover-border: rgb(249 249 247 / 30%);
+  --color-btn-active-bg: #4a4a47;
+  --color-btn-active-border: rgb(249 249 247 / 30%);
+  --color-btn-selected-bg: #41413e;
+
+  /* 主按钮（登录、评论）：浅陶土色配深色字，深色背景上更清楚。 */
+  --color-btn-primary-text: #2d2d2b;
+  --color-btn-primary-bg: #dfa087;
+  --color-btn-primary-border: transparent;
+  --color-btn-primary-shadow: 0 0 transparent;
+  --color-btn-primary-inset-shadow: 0 0 transparent;
+  --color-btn-primary-hover-bg: #e8b49f;
+  --color-btn-primary-hover-border: transparent;
+  --color-btn-primary-selected-bg: #d38f74;
+  --color-btn-primary-selected-shadow: 0 0 transparent;
+  --color-btn-primary-disabled-text: rgb(45 45 43 / 70%);
+  --color-btn-primary-disabled-bg: #8f6b5c;
+  --color-btn-primary-disabled-border: transparent;
+
+  --color-action-list-item-default-hover-bg: rgb(249 249 247 / 8%);
+  --color-segmented-control-bg: rgb(249 249 247 / 8%);
+  --color-segmented-control-button-bg: #2d2d2b;
+  --color-segmented-control-button-selected-border: rgb(249 249 247 / 30%);
+
+  /* 文字、底色、边线。 */
+  --color-fg-default: #f9f9f7;
+  --color-fg-muted: #b2b2b0;
+  --color-fg-subtle: #8c8c89;
+  --color-canvas-default: #373735;
+  --color-canvas-overlay: #373735;
+  --color-canvas-inset: #2d2d2b;
+  --color-canvas-subtle: #323230;
+  --color-border-default: rgb(249 249 247 / 15%);
+  --color-border-muted: rgb(249 249 247 / 10%);
+  --color-neutral-muted: rgb(249 249 247 / 10%);
+
+  /* 链接和强调色：陶土色。 */
+  --color-accent-fg: #dfa087;
+  --color-accent-emphasis: #cc7d5e;
+  --color-accent-muted: rgb(204 125 94 / 40%);
+  --color-accent-subtle: rgb(204 125 94 / 18%);
+
+  --color-success-fg: #3fb950;
+  --color-attention-fg: #d29922;
+  --color-attention-muted: rgb(187 128 9 / 40%);
+  --color-attention-subtle: rgb(187 128 9 / 15%);
+  --color-danger-fg: #f85149;
+  --color-danger-muted: rgb(248 81 73 / 40%);
+  --color-danger-subtle: rgb(248 81 73 / 10%);
+  --color-primer-shadow-inset: 0 0 transparent;
+  --color-scale-gray-7: #41413e;
+  --color-scale-blue-8: rgb(204 125 94 / 30%);
+
+  /*! Extensions from @primer/css/alerts/flash.scss */
+  --color-social-reaction-bg-hover: var(--color-scale-gray-7);
+  --color-social-reaction-bg-reacted-hover: var(--color-scale-blue-8);
+}
+
+main .pagination-loader-container {
+  background-image: url("https://github.com/images/modules/pulls/progressive-disclosure-line-dark.svg");
+}
+
+/* 页面上已经有「评论」标题，不再显示 giscus 自带的评论数、排序按钮和署名。 */
+main .gsc-header {
+  display: none;
+}
+
+/* 加载时只留一行灰字，不放 GitHub 的章鱼猫动画。 */
+main .gsc-loading-image {
+  display: none;
+}

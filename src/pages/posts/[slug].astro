@@ -1,5 +1,6 @@
 ---
 import { render } from 'astro:content';
+import Comments from '../../components/Comments.astro';
 import PostRow from '../../components/PostRow.astro';
 import TopicList from '../../components/TopicList.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
@@ -112,5 +113,7 @@ const topics = [...new Set(post.data.tags)];
     }
 
     {topics.length > 0 && <TopicList topics={topics} label="主题：" />}
+
+    <Comments term={post.id} />
   </footer>
 </BaseLayout>
