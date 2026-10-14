@@ -17,7 +17,6 @@ const { topic } = Astro.props as { topic: Topic };
 <BaseLayout
   title={`主题：${topic.name}`}
   description={`关于「${topic.name}」的文章。`}
-  crumb={{ href: '/topics/', label: '主题' }}
 >
   <PageHeading title={`主题 / ${topic.name}`} description={`共 ${topic.posts.length} 篇`} />
   <PostList posts={topic.posts} label={`关于 ${topic.name} 的文章`} />

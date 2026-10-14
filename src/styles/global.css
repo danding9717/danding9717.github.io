@@ -80,7 +80,6 @@ time {
 
 /* ---------- 页面框架 ---------- */
 
-.site-header,
 .site-main,
 .site-footer {
   width: min(100% - var(--gutter) * 2, var(--measure));
@@ -88,61 +87,33 @@ time {
   margin-left: auto;
 }
 
+/* 页头学 Naval：通栏，左边只有名字，右边几个灰色链接，下面留足空白。 */
 .site-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
-  padding-top: 1.75rem;
-  margin-bottom: 3rem;
+  padding: clamp(1.25rem, 3vw, 2.5rem) clamp(var(--gutter), 3.5vw, 3rem) 0;
+  margin-bottom: clamp(3rem, 8vw, 6rem);
+  line-height: 1.4;
 }
 
 .site-title {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 0.45em;
-  margin: 0;
-  font-weight: var(--font-strong);
-  line-height: 1.4;
+  color: var(--accent-text);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-decoration: none;
   white-space: nowrap;
 }
 
-.site-title a {
-  text-decoration: none;
-}
-
-.site-home {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5em;
-}
-
-.site-logo {
-  display: block;
-  width: 1.375em;
-  height: 1.375em;
-  flex: 0 0 auto;
-  background: var(--accent);
-  mask: var(--logo-image) center / contain no-repeat;
-  -webkit-mask: var(--logo-image) center / contain no-repeat;
-}
-
-.crumb-separator {
-  color: var(--muted);
-  font-weight: 400;
-}
-
-.crumb {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 400;
+.site-title:hover {
+  color: var(--text);
 }
 
 .site-nav {
   display: flex;
   flex: 0 0 auto;
-  align-items: center;
+  align-items: baseline;
   gap: 1.25em;
 }
 
@@ -151,57 +122,42 @@ time {
   text-decoration: none;
 }
 
-.site-nav a:hover {
-  color: var(--accent-text);
-}
-
+.site-nav a:hover,
 .site-nav a[aria-current="page"] {
   color: var(--text);
 }
 
-/* 单个主题开关：圆点在左是浅色，在右是深色。 */
+/* 主题开关做成和链接一样不起眼的小图标；深色时半圆换到另一边。 */
 .theme-toggle {
-  position: relative;
-  width: 2.25rem;
-  height: 1.25rem;
-  flex: 0 0 auto;
-  padding: 0;
-  background: transparent;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  display: inline-flex;
+  align-self: center;
+  padding: 0.25rem;
+  margin: -0.25rem;
+  color: var(--muted);
+  background: none;
+  border: 0;
   cursor: pointer;
-  transition: border-color 160ms ease;
+  transition: color 160ms ease;
 }
 
-.theme-toggle-knob {
-  position: absolute;
-  top: 50%;
-  left: 3px;
-  width: 0.75rem;
-  height: 0.75rem;
-  background: var(--muted);
-  border-radius: 50%;
-  transform: translateY(-50%);
-  transition:
-    transform 180ms ease,
-    background-color 160ms ease;
+.theme-toggle svg {
+  display: block;
+  width: 0.875rem;
+  height: 0.875rem;
+  transition: transform 180ms ease;
 }
 
-.theme-toggle[aria-pressed="true"] .theme-toggle-knob {
-  transform: translate(calc(2.25rem - 0.75rem - 8px), -50%);
+.theme-toggle[aria-pressed="true"] svg {
+  transform: rotate(180deg);
 }
 
 .theme-toggle:hover {
-  border-color: var(--accent);
+  color: var(--text);
 }
 
 /* 没开 JS 时开关不起作用，干脆不显示；页面跟随系统。 */
 :root:not([data-theme]) .theme-toggle {
   display: none;
-}
-
-.theme-toggle:hover .theme-toggle-knob {
-  background: var(--accent);
 }
 
 .site-main {
@@ -827,10 +783,6 @@ time {
 @media (max-width: 760px) {
   :root {
     --gutter: 20px;
-  }
-
-  .site-header {
-    padding-top: 1.25rem;
   }
 
   .site-nav {

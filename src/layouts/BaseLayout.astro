@@ -1,5 +1,5 @@
 ---
-import Header, { type Crumb } from '../components/Header.astro';
+import Header from '../components/Header.astro';
 import { AUTHOR_NAME, GITHUB_URL, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
 import { withBase } from '../utils/paths';
 import '../styles/global.css';
@@ -10,7 +10,6 @@ interface Props {
   type?: 'website' | 'article';
   publishedTime?: Date;
   /** 页头面包屑，例如文章页的「Dan Hu / 文章」。 */
-  crumb?: Crumb;
 }
 
 const {
@@ -18,7 +17,6 @@ const {
   description = SITE_DESCRIPTION,
   type = 'website',
   publishedTime,
-  crumb,
 } = Astro.props;
 const pageTitle = title === SITE_TITLE ? SITE_TITLE : `${title} | ${SITE_TITLE}`;
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
@@ -105,7 +103,7 @@ const imageUrl = new URL(withBase('/logo.png'), Astro.site);
     <title>{pageTitle}</title>
   </head>
   <body>
-    <Header crumb={crumb} />
+    <Header />
     <main class="site-main">
       <slot />
     </main>

@@ -13,7 +13,6 @@ import {
   getRelatedPosts,
   type Post,
 } from '../../utils/posts';
-import { withBase } from '../../utils/paths';
 
 export async function getStaticPaths() {
   const posts = await getPublishedPosts();
@@ -49,7 +48,6 @@ const topics = [...new Set(post.data.tags)];
   description={post.data.description}
   type="article"
   publishedTime={post.data.date}
-  crumb={{ href: withBase('/#posts'), label: '文章' }}
 >
   <article class="post" data-pagefind-body>
     <header class="post-header">
