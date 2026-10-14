@@ -44,8 +44,9 @@ import {
   writingAssistantActions,
 } from './grok-writing-agent.mjs';
 import { autosavePathFor, exportPathFor } from './writing-agent/storage.mjs';
+import { SITE_URL } from '../site.config.mjs';
 
-const onlineBlogUrl = 'https://danding9717.github.io/';
+const onlineBlogUrl = `${SITE_URL}/`;
 const maxLogLines = 12;
 const themeNames = ['light', 'dark', 'diablo'];
 const commandSelectionHelp = '↑/↓ select  Enter run  Esc close';

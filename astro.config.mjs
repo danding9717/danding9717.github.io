@@ -3,9 +3,10 @@ import { satteri } from '@astrojs/markdown-satteri';
 import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
 import { claudeDark, claudeLight } from './src/styles/code-themes.mjs';
+import { SITE_URL } from './site.config.mjs';
 
 export default defineConfig({
-  site: 'https://danding9717.github.io',
+  site: SITE_URL,
   output: 'static',
   // 两篇文章用了同一个 slug、或两个页面生成同一个网址时，直接让构建失败。
   prerenderConflictBehavior: 'error',
