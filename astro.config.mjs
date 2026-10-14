@@ -1,6 +1,7 @@
 import { defineConfig } from 'astro/config';
 import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
+import { claudeDark, claudeLight } from './src/styles/code-themes.mjs';
 
 export default defineConfig({
   site: 'https://danding9717.github.io',
@@ -10,8 +11,8 @@ export default defineConfig({
     syntaxHighlight: 'shiki',
     shikiConfig: {
       themes: {
-        light: 'github-light',
-        dark: 'github-dark',
+        light: claudeLight,
+        dark: claudeDark,
       },
     },
   },

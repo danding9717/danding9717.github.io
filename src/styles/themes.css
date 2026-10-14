@@ -1,90 +1,60 @@
-/* 三套主题的颜色变量，通过 <html data-theme> 切换。 */
+/*
+ * 黑白两套主题的颜色变量，通过 <html data-theme> 切换。
+ * 配色参考 Claude 的 Typora 主题：暖灰中性色 + 陶土色强调。
+ */
+
 :root {
   color-scheme: light;
-  --bg: #f5f5f7;
-  --bg-elevated: #fbfbfd;
-  --surface: rgb(255 255 255 / 0.74);
+  --bg: #f9f9f7;
+  --surface: #f4f4f2;
   --surface-solid: #ffffff;
-  --surface-soft: rgb(255 255 255 / 0.56);
-  --text: #1d1d1f;
-  --muted: #6e6e73;
-  --soft: #f2f2f4;
-  --line: rgb(0 0 0 / 0.1);
-  --line-strong: rgb(0 0 0 / 0.16);
-  --link: #1d1d1f;
-  --link-hover: #0066cc;
-  --accent: #0066cc;
-  --excerpt: #2c2c2e;
-  --prose-secondary: #3a3a3c;
-  --tag-bg: rgb(29 29 31 / 0.08);
-  --tag-text: #1d1d1f;
-  --logo: #1d1d1f;
-  --nav-bg: rgb(251 251 253 / 0.78);
-  --theme-control-bg: rgb(118 118 128 / 0.12);
-  --theme-control-border: rgb(0 0 0 / 0.08);
-  --theme-control-active: rgb(255 255 255 / 0.92);
-  --theme-icon: #6e6e73;
-  --theme-icon-active: #1d1d1f;
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.06);
-  --shadow-md: 0 1px 3px rgb(0 0 0 / 0.06), 0 18px 46px rgb(0 0 0 / 0.09);
+  --card: #ffffff;
+  --hover: #ecece9;
+  --text: #2d2d2b;
+  --muted: #6b6b67;
+  --secondary: #4f4f4b;
+  --accent: #cc7d5e;
+  --accent-text: #a95639;
+  --accent-soft: rgb(204 125 94 / 12%);
+  --selection: rgb(204 125 94 / 28%);
+  --line: rgb(45 45 43 / 15%);
+  --line-strong: rgb(45 45 43 / 30%);
+  --table-th-border: rgb(45 45 43 / 48%);
+  --table-td-border: rgb(45 45 43 / 24%);
+  --code-bg: rgb(45 45 43 / 5.5%);
+  --code-text: #8a3f27;
+  --pre-bg: rgb(255 255 255 / 72%);
+  --quote-border: rgb(204 125 94 / 42%);
+  --nav-bg: rgb(249 249 247 / 82%);
+  --switch-active: #ffffff;
+  --shadow-sm: 0 18px 48px -28px rgb(45 45 43 / 28%), 0 8px 18px -14px rgb(45 45 43 / 16%), 0 0 0 0.5px rgb(31 30 29 / 18%);
+  --shadow-md: 0 22px 58px -30px rgb(45 45 43 / 34%), 0 10px 22px -15px rgb(45 45 43 / 20%), 0 0 0 0.5px rgb(31 30 29 / 28%);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #000000;
-  --bg-elevated: #111113;
-  --surface: rgb(28 28 30 / 0.74);
-  --surface-solid: #1c1c1e;
-  --surface-soft: rgb(255 255 255 / 0.055);
-  --text: #f5f5f7;
-  --muted: #a1a1a6;
-  --soft: #1c1c1e;
-  --line: rgb(255 255 255 / 0.12);
-  --line-strong: rgb(255 255 255 / 0.18);
-  --link: #f5f5f7;
-  --link-hover: #2997ff;
-  --accent: #2997ff;
-  --excerpt: #e5e5e7;
-  --prose-secondary: #d1d1d6;
-  --tag-bg: rgb(255 255 255 / 0.12);
-  --tag-text: #f5f5f7;
-  --logo: #f5f5f7;
-  --nav-bg: rgb(20 20 22 / 0.78);
-  --theme-control-bg: rgb(118 118 128 / 0.18);
-  --theme-control-border: rgb(255 255 255 / 0.12);
-  --theme-control-active: rgb(255 255 255 / 0.18);
-  --theme-icon: #a1a1a6;
-  --theme-icon-active: #ffffff;
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.28), 0 8px 28px rgb(0 0 0 / 0.34);
-  --shadow-md: 0 1px 3px rgb(0 0 0 / 0.3), 0 20px 54px rgb(0 0 0 / 0.44);
-}
-
-:root[data-theme="diablo"] {
-  color-scheme: dark;
-  --bg: #0f0f0d;
-  --bg-elevated: #171611;
-  --surface: rgb(27 26 20 / 0.76);
-  --surface-solid: #1b1a14;
-  --surface-soft: rgb(215 175 0 / 0.08);
-  --text: #e2ded3;
-  --muted: #9c9279;
-  --soft: #1b1a14;
-  --line: rgb(215 175 0 / 0.22);
-  --line-strong: rgb(215 175 0 / 0.34);
-  --link: #e5c85b;
-  --link-hover: #f0cb42;
-  --accent: #d7af00;
-  --excerpt: #d4cfc2;
-  --prose-secondary: #c9c1af;
-  --tag-bg: rgb(215 175 0 / 0.14);
-  --tag-text: #f0cb42;
-  --logo: #d7af00;
-  --nav-bg: rgb(23 22 17 / 0.82);
-  --theme-control-bg: rgb(215 175 0 / 0.08);
-  --theme-control-border: rgb(215 175 0 / 0.22);
-  --theme-control-active: rgb(215 175 0 / 0.16);
-  --theme-icon: #9c9279;
-  --theme-icon-active: #f0cb42;
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 26px rgb(0 0 0 / 0.32);
-  --shadow-md: 0 1px 3px rgb(0 0 0 / 0.34), 0 18px 50px rgb(0 0 0 / 0.44);
+  --bg: #2d2d2b;
+  --surface: #373735;
+  --surface-solid: #3d3d3a;
+  --card: #373735;
+  --hover: #41413e;
+  --text: #f9f9f7;
+  --muted: #b2b2b0;
+  --secondary: #d0d0cc;
+  --accent: #cc7d5e;
+  --accent-text: #dfa087;
+  --accent-soft: rgb(204 125 94 / 18%);
+  --selection: rgb(204 125 94 / 34%);
+  --line: rgb(249 249 247 / 15%);
+  --line-strong: rgb(249 249 247 / 30%);
+  --table-th-border: rgb(249 249 247 / 48%);
+  --table-td-border: rgb(249 249 247 / 24%);
+  --code-bg: rgb(249 249 247 / 7%);
+  --code-text: #f0a486;
+  --pre-bg: rgb(55 55 53 / 86%);
+  --quote-border: rgb(204 125 94 / 48%);
+  --nav-bg: rgb(55 55 53 / 82%);
+  --switch-active: rgb(249 249 247 / 16%);
+  --shadow-sm: 0 20px 52px -26px rgb(0 0 0 / 58%), 0 8px 20px -14px rgb(0 0 0 / 42%), 0 0 0 0.5px rgb(222 220 209 / 18%);
+  --shadow-md: 0 24px 62px -28px rgb(0 0 0 / 66%), 0 10px 24px -14px rgb(0 0 0 / 48%), 0 0 0 0.5px rgb(222 220 209 / 28%);
 }

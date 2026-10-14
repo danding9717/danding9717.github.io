@@ -46,12 +46,12 @@ const imageUrl = new URL(withBase('/logo.png'), Astro.site);
     <meta name="twitter:title" content={pageTitle} />
     <meta name="twitter:description" content={description} />
     <link rel="sitemap" href={withBase('/sitemap-index.xml')} />
-    <meta name="theme-color" content="#f5f5f7" />
+    <meta name="theme-color" content="#f9f9f7" />
     <script is:inline>
       (() => {
         const themeKey = 'dan-ding-theme';
-        const themes = ['light', 'dark', 'diablo'];
-        let theme = 'light';
+        const themes = ['light', 'dark'];
+        let theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 
         try {
           const storedTheme = localStorage.getItem(themeKey);
@@ -85,7 +85,7 @@ const imageUrl = new URL(withBase('/logo.png'), Astro.site);
     <link
       rel="mask-icon"
       href={withBase('/site-icons/dan-ding-safari-pinned-v3.svg')}
-      color="#d7af00"
+      color="#cc7d5e"
     />
     <link rel="manifest" href={withBase('/site.webmanifest')} />
     <link
@@ -112,11 +112,10 @@ const imageUrl = new URL(withBase('/logo.png'), Astro.site);
     <script is:inline>
       (() => {
         const themeKey = 'dan-ding-theme';
-        const themes = ['light', 'dark', 'diablo'];
+        const themes = ['light', 'dark'];
         const themeColors = {
-          light: '#f5f5f7',
-          dark: '#000000',
-          diablo: '#0f0f0d',
+          light: '#f9f9f7',
+          dark: '#2d2d2b',
         };
         const buttons = document.querySelectorAll('[data-theme-option]');
         const themeColorMeta = document.querySelector('meta[name="theme-color"]');

@@ -150,7 +150,7 @@ draft: false
 ## 修改博客信息
 
 - 博客名称、首页介绍语、作者名和导航菜单在 `src/consts.ts`。
-- 三套主题的颜色变量在 `src/styles/themes.css`，布局和排版在 `src/styles/global.css`。
+- 浅色、深色两套主题的颜色变量在 `src/styles/themes.css`，代码高亮配色在 `src/styles/code-themes.mjs`，布局和排版在 `src/styles/global.css`。没有手动选过主题的访客会跟随系统的深浅色设置。
 - 关于页内容在 `src/pages/about.astro`。
 
 ## GitHub Pages 部署
