@@ -21,11 +21,12 @@ npm run preview
 
 ## 站点页面
 
-- `/`：自我介绍、分类入口和最新 8 篇文章，没有文章时显示空状态。
+- `/`：参考 Steph Ango 的首页结构：一句自我介绍，突出最新一篇，然后是主题标签，最后按年份列出全部文章（标题、日期和一句导语，导语取自 frontmatter 的 `description`）。没有文章时显示空状态。
 - `/posts/<文件名>/`：文章页，包含阅读时长、目录（有两个以上二、三级标题时显示）、上一篇 / 下一篇和同标签的相关文章。
 - `/categories/`、`/categories/<分类>/`：按 `category` 浏览。
 - `/tags/`、`/tags/<标签>/`：按 `tags` 浏览。
 - `/archive/`：按年份列出全部文章。
+- `/now/`：“我最近在做什么”页面，内容直接改 `src/pages/now.md`，改完顺手更新里面的 `updated` 日期。
 - `/search/`：站内全文搜索（Pagefind）。
 - `/about/`、`/rss.xml`、`/sitemap-index.xml`、404 页。
 

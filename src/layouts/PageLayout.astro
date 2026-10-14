@@ -1,0 +1,26 @@
+---
+// 给 src/pages 里的 Markdown 页面（例如 now.md）用的版式。
+import PageHeading from '../components/PageHeading.astro';
+import BaseLayout from './BaseLayout.astro';
+import { formatDate } from '../utils/posts';
+
+interface Props {
+  frontmatter: {
+    title: string;
+    description?: string;
+    eyebrow?: string;
+    updated?: string | Date;
+  };
+}
+
+const { title, description, eyebrow, updated } = Astro.props.frontmatter;
+// YAML 会把 2026-10-14 解析成日期，这里统一转回 YYYY-MM-DD。
+const updatedText = updated instanceof Date ? formatDate(updated) : updated;
+---
+
+<BaseLayout title={title} description={description}>
+  <PageHeading eyebrow={eyebrow} title={title} description={updatedText ? `更新于 ${updatedText}` : undefined} />
+  <article class="prose">
+    <slot />
+  </article>
+</BaseLayout>

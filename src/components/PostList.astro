@@ -1,5 +1,5 @@
 ---
-import PostPreview from './PostPreview.astro';
+import PostRow from './PostRow.astro';
 import type { Post } from '../utils/posts';
 
 interface Props {
@@ -13,11 +13,11 @@ const { posts, label, emptyText = '这里还没有文章。' } = Astro.props;
 
 {
   posts.length ? (
-    <section class="post-list" aria-label={label}>
+    <ol class="post-rows" aria-label={label}>
       {posts.map((post) => (
-        <PostPreview post={post} />
+        <PostRow post={post} />
       ))}
-    </section>
+    </ol>
   ) : (
     <p class="empty-state">{emptyText}</p>
   )

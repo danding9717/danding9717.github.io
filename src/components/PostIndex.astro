@@ -1,0 +1,35 @@
+---
+import PostRow from './PostRow.astro';
+import type { Post } from '../utils/posts';
+
+interface Props {
+  posts: Post[];
+}
+
+const { posts } = Astro.props;
+const years = Object.entries(
+  posts.reduce<Record<string, Post[]>>((groups, post) => {
+    const year = String(post.data.date.getFullYear());
+    (groups[year] ??= []).push(post);
+    return groups;
+  }, {}),
+).sort(([a], [b]) => Number(b) - Number(a));
+---
+
+<div class="post-index">
+  {
+    years.map(([year, yearPosts]) => (
+      <section class="year-group" id={year} aria-label={`${year} 年`}>
+        <h3 class="year-title">
+          {year}
+          <span class="year-count">{yearPosts.length} 篇</span>
+        </h3>
+        <ol class="post-rows">
+          {yearPosts.map((post) => (
+            <PostRow post={post} shortDate />
+          ))}
+        </ol>
+      </section>
+    ))
+  }
+</div>

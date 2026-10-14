@@ -9,5 +9,6 @@ export const NAV_LINKS = [
   { href: '/categories/', label: '分类' },
   { href: '/tags/', label: '标签' },
   { href: '/archive/', label: '归档' },
+  { href: '/now/', label: 'Now' },
   { href: '/about/', label: '关于' },
 ];
