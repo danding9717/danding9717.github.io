@@ -11,16 +11,19 @@ import {
   formatPost,
   headingTitle,
   isBlankDraft,
+  joinDocument,
   mapProse,
-  missingFields,
   nextPostId,
   normalizeDate,
   parseTags,
   planImages,
   preparePost,
+  readFields,
   rewriteLinks,
+  splitDocument,
   splitFrontmatter,
   unquote,
+  writeFields,
   zonedTime,
 } from '../../scripts/myblog/blog.mjs';
 
@@ -66,6 +69,65 @@ test('frontmatter 宽松读取：中文冒号、注释、一行一个的列表�
 
   assert.deepEqual(splitFrontmatter('﻿---\r\ntitle: "a"\r\n---\r\nbody'), { data: { title: '"a"' }, body: 'body' });
   assert.deepEqual(splitFrontmatter('没有 frontmatter'), { data: {}, body: '没有 frontmatter' });
+  // 空的 frontmatter 到第一个 --- 就结束，后面的 --- 是正文里的分隔线。
+  assert.deepEqual(splitFrontmatter('---\n---\n\n---\n正文'), { data: {}, body: '\n---\n正文' });
+});
+
+test('编辑器里只有正文：frontmatter 拆出来原样保留，拼回去不变', () => {
+  const text = '---\ntitle: 复利\nfeatured: true\n---\n\n\n正文第一段。\n';
+  const { head, body } = splitDocument(text);
+  assert.equal(head, '---\ntitle: 复利\nfeatured: true\n---\n');
+  assert.equal(body, '正文第一段。\n');
+  assert.equal(joinDocument(head, body), '---\ntitle: 复利\nfeatured: true\n---\n\n正文第一段。\n');
+
+  assert.deepEqual(splitDocument(''), { head: '', body: '' });
+  assert.equal(joinDocument('', ''), '');
+  assert.deepEqual(splitDocument('只有正文'), { head: '', body: '只有正文' });
+  assert.deepEqual(splitDocument('\uFEFF---\r\ntitle: a\r\n---\r\n正文\r\n'), { head: '---\ntitle: a\n---\n', body: '正文\n' });
+
+  // 正文以分隔线开头时，先放一个空的 frontmatter，下次打开正文还在。
+  const saved = joinDocument('', '---\n分隔线后面\n---\n再一条');
+  assert.equal(saved, '---\n---\n\n---\n分隔线后面\n---\n再一条');
+  assert.deepEqual(splitDocument(saved), { head: '---\n---\n', body: '---\n分隔线后面\n---\n再一条' });
+});
+
+test('发布页读出要填的几项，没写标题时用正文第一行的「# 标题」', () => {
+  const head = '---\ntitle: \ndescription: "一句导语"\ntags: [AI, 财富]\nslug: compound\n---\n';
+  assert.deepEqual(readFields(head, '# 正文里的标题\n\n正文'), {
+    title: '正文里的标题',
+    description: '一句导语',
+    tags: ['AI', '财富'],
+    slug: 'compound',
+    date: '',
+  });
+  assert.equal(readFields('---\ntitle: 写在上面\n---\n', '# 正文里的标题').title, '写在上面');
+  assert.deepEqual(readFields('', ''), { title: '', description: '', tags: [], slug: '', date: '' });
+});
+
+test('发布页填的写回 frontmatter：改原来那项，加没有的，删空的，别的不动', () => {
+  assert.equal(
+    writeFields('', { title: '复利', description: '', tags: ['AI', '财富'], slug: '' }),
+    '---\ntitle: "复利"\ntags: ["AI", "财富"]\n---\n',
+  );
+
+  const head = '---\ntitle: 旧标题\n# 注释\ntags:\n  - AI\n  - 生意\nfeatured: true\n---\n';
+  assert.equal(
+    writeFields(head, { title: '新标题', description: '导语', tags: ['财富'], slug: '' }),
+    '---\ntitle: "新标题"\n# 注释\ntags: ["财富"]\nfeatured: true\ndescription: "导语"\n---\n',
+  );
+
+  // 上一版新建的空骨架。
+  assert.equal(
+    writeFields('---\ntitle: \ndescription: \ntags: \nslug: \n---\n', { title: 'T', description: 'D', tags: ['AI'], slug: '' }),
+    '---\ntitle: "T"\ndescription: "D"\ntags: ["AI"]\n---\n',
+  );
+
+  assert.equal(writeFields('---\ntitle: a\ntitle: b\n---\n', { title: 'c' }), '---\ntitle: "c"\n---\n');
+  assert.equal(writeFields('---\ntitle: a\n---\n', { title: '' }), '');
+
+  // 引号、冒号原样读得回来。
+  const fields = { title: '他说"复利": 不只是钱', description: "a: b # c", tags: ['AI'], slug: 'x', date: '2026-10-14 21:30' };
+  assert.deepEqual(readFields(writeFields('', fields)), fields);
 });
 
 test('引号、主题的各种写法', () => {
@@ -92,13 +154,16 @@ test('文章地址：有 slug 用 slug，没有就用文件名', () => {
   assert.equal(describe('---\ntitle: a\n---\n', { file: '/d/20261014-213000.md', kind: 'draft' }).id, '');
 });
 
-test('列表里提示草稿缺什么', () => {
-  const doc = describe('---\ntitle: \ndescription: 有\ntags: \n---\n\n', { file: '/d/a.md', kind: 'draft' });
-  assert.deepEqual(missingFields(doc), ['标题', '主题']);
-  assert.deepEqual(missingFields(describe('# 标题\n', { file: '/d/b.md', kind: 'draft' })), ['导语', '主题']);
+test('还没有标题的草稿，列表里显示正文的第一句', () => {
+  const untitled = describe('\n\n> 今天想清楚了一件事。\n\n第二段', { file: '/d/a.md', kind: 'draft' });
+  assert.equal(untitled.title, '');
+  assert.equal(untitled.excerpt, '今天想清楚了一件事。');
+  assert.equal(describe('', { file: '/d/b.md', kind: 'draft' }).excerpt, '');
+  assert.equal(describe('# 标题\n', { file: '/d/c.md', kind: 'draft' }).title, '标题');
 });
 
-test('空骨架草稿算没写', () => {
+test('什么都没写的草稿算空白', () => {
+  assert.equal(isBlankDraft(''), true);
   assert.equal(isBlankDraft('---\ntitle: \ndescription: \ntags: \nslug: \n---\n\n'), true);
   assert.equal(isBlankDraft('---\ntitle: 有标题\n---\n'), false);
   assert.equal(isBlankDraft('---\ntitle: \n---\n\n写了一句'), false);
@@ -188,12 +253,12 @@ test('修改已发布的文章：地址和日期不变，不能改 slug', () => 
   assert.equal(preparePost(backdated, { posts: [existing], existing, now: NOW }).date, '2026-09-30T08:00:00+08:00');
 
   const renamed = draft({ title: '复利', description: '导语', tags: 'AI', slug: 'compound' });
-  assert.match(problemsOf(() => preparePost(renamed, { posts: [existing], existing, now: NOW }))[0], /不能改地址/);
+  assert.match(problemsOf(() => preparePost(renamed, { posts: [existing], existing, now: NOW }))[0], /不能改网址/);
 });
 
 test('看不懂的日期不发布', () => {
   const problems = problemsOf(() => preparePost(draft({ title: 't', date: '十月十四', description: 'd', tags: 'AI' }), { posts: [], now: NOW }));
-  assert.match(problems[0], /date 的格式不对/);
+  assert.match(problems[0], /发布时间的格式不对/);
 });
 
 test('[[ ]] 链接换成站内地址，代码里的不动', () => {

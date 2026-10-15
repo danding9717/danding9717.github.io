@@ -230,43 +230,14 @@ export class TextBuffer {
 
   /* ---------- Markdown ---------- */
 
-  /** frontmatter 结束的那一行（第二个 ---），没有 frontmatter 时返回 -1。 */
-  frontmatterEnd() {
-    if (this.lines[0]?.trim() !== '---') return -1;
-    for (let index = 1; index < this.lines.length; index += 1) {
-      if (this.lines[index].trim() === '---') return index;
-    }
-    return -1;
-  }
-
-  /** 光标所在的段落（连续的非空行），在 frontmatter 里或空行上返回 null。 */
+  /** 光标所在的段落（连续的非空行），在空行上返回 null。 */
   paragraph() {
-    if (this.line <= this.frontmatterEnd() || !this.lines[this.line].trim()) return null;
+    if (!this.lines[this.line].trim()) return null;
     let start = this.line;
     let end = this.line;
-    while (start > this.frontmatterEnd() + 1 && this.lines[start - 1].trim()) start -= 1;
+    while (start > 0 && this.lines[start - 1].trim()) start -= 1;
     while (end < this.lines.length - 1 && this.lines[end + 1].trim()) end += 1;
     return { start, end, text: this.lines.slice(start, end + 1).join('\n') };
-  }
-
-  /** 改 frontmatter 里某一项的值，没有这一项就加上。 */
-  setField(key, value) {
-    const end = this.frontmatterEnd();
-    this.record('other');
-    if (end < 0) {
-      this.lines.unshift('---', `${key}: ${value}`, '---', '');
-      this.line += 4;
-    } else {
-      const index = this.lines.slice(1, end).findIndex((line) => new RegExp(`^${key}\\s*[:：]`).test(line));
-      if (index >= 0) {
-        this.lines[index + 1] = `${key}: ${value}`;
-      } else {
-        this.lines.splice(1, 0, `${key}: ${value}`);
-        if (this.line >= 1) this.line += 1;
-      }
-    }
-    this.setCursor(this.line, this.col);
-    this.changed();
   }
 
   /** 光标前是 [[ 加几个字时，返回这几个字（用来提示文章标题）。 */
@@ -316,11 +287,10 @@ export function widthOf(parts) {
   return parts.reduce((sum, part) => sum + charWidth(part), 0);
 }
 
-/** 字数：中文按字，英文按词，不算 frontmatter。 */
+/** 字数：中文按字，英文按词。 */
 export function wordCount(text) {
-  const body = text.replace(/^---[ \t]*\n[\s\S]*?\n---[ \t]*(?:\n|$)/, '');
-  const han = body.match(/\p{Script=Han}/gu)?.length ?? 0;
-  const latin = body.replace(/\p{Script=Han}/gu, ' ').match(/[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g)?.length ?? 0;
+  const han = text.match(/\p{Script=Han}/gu)?.length ?? 0;
+  const latin = text.replace(/\p{Script=Han}/gu, ' ').match(/[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g)?.length ?? 0;
   return han + latin;
 }
 

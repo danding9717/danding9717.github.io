@@ -9,6 +9,7 @@ import { SITE_URL } from '../site.config.mjs';
 import { AI_ACTIONS, NO_KEY_MESSAGE, aiConfig, buildMessages, parseTitles, streamReply } from './myblog/ai.mjs';
 import {
   BlogError,
+  FEATURED,
   PUBLISH_STEPS,
   ROOT,
   TOPICS,
@@ -16,18 +17,21 @@ import {
   droppedImagePath,
   headingTitle,
   isBlankDraft,
+  joinDocument,
   listDocs,
   liveVersion,
-  missingFields,
+  nextPostId,
   postUrl,
   preparePost,
   publish,
   pushPending,
-  splitFrontmatter,
+  readFields,
+  splitDocument,
   trashDraft,
   unpushedCount,
-  unquote,
   waitUntilLive,
+  writeFields,
+  zonedTime,
 } from './myblog/blog.mjs';
 import { TextBuffer, cursorRow, layout, widthOf, wordCount } from './myblog/editor.mjs';
 import { Screen, clip, graphemes, paint, textWidth, wrap } from './myblog/terminal.mjs';
@@ -60,13 +64,18 @@ try {
 const HOST = new URL(SITE_URL).host;
 const SPINNER = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
 const STEPS = [...PUBLISH_STEPS, ['live', '等待网站更新']];
-const FIELD_HINTS = {
-  title: '标题：一句话说出这篇的观点。也可以空着，在正文第一行写「# 标题」。',
-  description: '导语：一句话，显示在标题下面，也是首页和 RSS 的摘要。必填。',
-  tags: `主题：至少一个，用逗号隔开。常用的有 ${TOPICS.join('、')}；加上「精选」会出现在首页精选。`,
-  slug: '网址（可选）：小写英文、数字和连字符，比如 compound → /posts/compound/。不写就用日期。',
-  date: '发布时间：不写就用发布那一刻。手写的话写成 2026-10-14 或 2026-10-14 21:30。',
+
+// 发布页上的几项：名字、提示和没填时显示的灰字。
+const FORM_FIELDS = {
+  title: { label: '标题', hint: '一句话说出这篇的观点，读标题就知道在说什么。', placeholder: '还没写' },
+  description: { label: '导语', hint: '一句话，显示在标题下面，也是首页和 RSS 的摘要。', placeholder: '还没写' },
+  tags: { label: '主题', hint: `←→ 挑，空格选中或取消，也可以直接按数字。选「${FEATURED}」会放进首页精选。` },
+  slug: { label: '网址', hint: '可选：小写英文、数字和连字符，比如 compound 就是 /posts/compound/。' },
+  date: { label: '时间', hint: '发布时间，写成 2026-10-14 或 2026-10-14 21:30；删掉就用发布那一刻。', placeholder: '发布那一刻' },
+  submit: { hint: '会先检查一遍，有问题列在下面，不会发出去。' },
 };
+const CHIPS = [...TOPICS, FEATURED];
+const LABEL_WIDTH = 9;
 
 const screen = new Screen();
 const state = {
@@ -79,6 +88,7 @@ const state = {
   unpushed: 0,
   deploy: null,
   editor: null,
+  form: null,
   publishing: null,
   frame: 0,
 };
@@ -130,12 +140,15 @@ function quit() {
   process.exit(0);
 }
 
-/** 退出前把编辑器里没来得及自动保存的草稿写进文件。 */
+/** 退出前把没来得及自动保存的草稿（包括发布页上填了一半的）写进文件。 */
 function saveDraftNow() {
-  const editor = state.editor;
-  if (editor?.doc.kind !== 'draft' || editor.buffer.text === editor.savedText) return;
   try {
-    writeFileSync(editor.doc.file, editor.buffer.text, 'utf8');
+    if (state.form) applyForm(state.form);
+    for (const session of new Set([state.editor, state.form?.session])) {
+      if (session?.doc.kind !== 'draft') continue;
+      const text = documentText(session);
+      if (text !== session.savedText) writeFileSync(session.doc.file, text, 'utf8');
+    }
   } catch {
     // 尽力而为。
   }
@@ -170,8 +183,8 @@ function render() {
   if (!screen.active || hungUp) return;
   const width = screen.width;
   const height = screen.height;
-  const view =
-    state.view === 'editor' ? renderEditor(width, height) : state.view === 'publish' ? renderPublish(width, height) : renderList(width, height);
+  const views = { editor: renderEditor, form: renderForm, publish: renderPublish, list: renderList };
+  const view = views[state.view](width, height);
   screen.draw(view.rows, view.cursor ?? null);
   keepTicking();
 }
@@ -223,6 +236,8 @@ function messageSegments() {
 async function handleKey(key) {
   if (state.view === 'editor') {
     await editorKey(key);
+  } else if (state.view === 'form') {
+    await formKey(key);
   } else if (key.name === 'text') {
     // 列表和发布页上的字母是快捷键，一个一个处理。
     for (const letter of key.text) await (state.view === 'list' ? listKey : publishKey)({ name: letter });
@@ -246,7 +261,7 @@ async function listKey(key) {
   else if (name === 'down' || name === 'j') state.selected = Math.min(list.length - 1, state.selected + 1);
   else if (name === 'enter' && doc) await openEditor(doc);
   else if (name === 'n') await openEditor(null);
-  else if (name === 'p' && doc?.kind === 'draft') await openPublish(doc);
+  else if (name === 'p' && doc?.kind === 'draft') openForm(await openSession(doc));
   else if (name === 'p' && doc) say('已发布的文章按 Enter 打开修改，改完在编辑器里按 Ctrl+P 更新。');
   else if (name === 'd' && doc?.kind === 'draft') await deleteDraft(doc);
   else if (name === 'o' && doc?.kind === 'post') openUrl(postUrl(doc.id));
@@ -314,10 +329,9 @@ function listRow(doc, selected, width) {
   const meta =
     state.confirmDelete === doc.file
       ? [['再按一次 d 删除这篇草稿', 'error']]
-      : doc.kind === 'draft'
-        ? [[missingFields(doc).length ? `缺${missingFields(doc).join('、')}   ` : '', 'dim'], [timeAgo(doc.mtime), 'dim']]
-        : [[shortDate(doc.date), 'dim']];
-  const title = doc.title || '（未命名）';
+      : [[doc.kind === 'draft' ? timeAgo(doc.mtime) : shortDate(doc.date), 'dim']];
+  // 还没起标题的草稿显示正文的第一句。
+  const title = doc.title || doc.excerpt || '（空白）';
   const titleStyle = selected ? 'bold' : doc.title ? 'plain' : 'dim';
   return paint(spread([[selected ? '  › ' : '    ', 'accent'], [title, titleStyle]], [...meta, [' ']], width), width);
 }
@@ -344,31 +358,33 @@ async function openEditor(doc) {
     await refresh();
     doc = state.docs.drafts.find((draft) => draft.file === file);
   }
-  const text = await readFile(doc.file, 'utf8');
-  const buffer = new TextBuffer(text);
-  placeCursor(buffer, doc);
-  state.editor = { doc, buffer, savedText: text, scroll: 0, popup: null, popupClosed: false, prompt: null, ai: null, saving: Promise.resolve(), leaving: false };
+  const session = await openSession(doc);
+  placeCursor(session.buffer, doc);
+  state.editor = Object.assign(session, { scroll: 0, popup: null, popupClosed: false, prompt: null, ai: null, leaving: false });
   state.view = 'editor';
   clearMessage();
 }
 
-/** 新草稿停在 title 后面；写了一半的草稿停在最后；已发布的文章停在正文开头。 */
+/**
+ * 打开一篇：标题、导语这些（frontmatter）原样存在 head 里不显示，buffer 里只有正文。
+ * 编辑器和从列表直接打开的发布页都用它。
+ */
+async function openSession(doc) {
+  const { head, body } = splitDocument(await readFile(doc.file, 'utf8'));
+  return { doc, head, buffer: new TextBuffer(body), savedText: joinDocument(head, body), saving: Promise.resolve(), saveTimer: null };
+}
+
+/** 存进文件的样子：frontmatter 加正文。 */
+function documentText(session) {
+  return joinDocument(session.head, session.buffer.text);
+}
+
+/** 草稿停在最后一个字后面，已发布的文章停在开头。 */
 function placeCursor(buffer, doc) {
-  const titleLine = buffer.lines.findIndex((line) => /^title\s*[:：]/.test(line));
-  if (doc.kind === 'draft' && !doc.title && titleLine >= 0) {
-    buffer.setCursor(titleLine, Infinity);
-  } else if (doc.kind === 'draft') {
-    const bodyStart = buffer.frontmatterEnd() + 1;
-    let last = buffer.lines.length - 1;
-    while (last >= bodyStart && !buffer.lines[last].trim()) last -= 1;
-    // 还没写正文时停在 frontmatter 下面空一行的地方。
-    if (last >= bodyStart) buffer.setCursor(last, Infinity);
-    else buffer.setCursor(Math.min(bodyStart + 1, buffer.lines.length - 1), 0);
-  } else {
-    const start = buffer.frontmatterEnd() + 1;
-    const first = buffer.lines.findIndex((line, index) => index >= start && line.trim());
-    buffer.setCursor(first >= 0 ? first : start, 0);
-  }
+  if (doc.kind === 'post') return buffer.setCursor(0, 0);
+  let last = buffer.lines.length - 1;
+  while (last > 0 && !buffer.lines[last].trim()) last -= 1;
+  buffer.setCursor(last, Infinity);
 }
 
 async function editorKey(key) {
@@ -384,7 +400,7 @@ async function editorKey(key) {
     editor.leaving = false;
     clearMessage();
   }
-  if (ctrl && name === 's') return saveDraft(true);
+  if (ctrl && name === 's') return saveDraft(editor, true);
   if (ctrl && name === 'p') return publishFromEditor();
   if (ctrl && name === 'k') return openPrompt();
 
@@ -422,44 +438,43 @@ function scheduleSave() {
   const editor = state.editor;
   if (editor.doc.kind !== 'draft') return;
   clearTimeout(editor.saveTimer);
-  editor.saveTimer = setTimeout(() => saveDraft(), 500);
+  editor.saveTimer = setTimeout(() => saveDraft(editor), 500);
 }
 
 /** 草稿自动保存；已发布的文章只在 Ctrl+P 更新时写回。 */
-async function saveDraft(explicit = false) {
-  const editor = state.editor;
-  if (!editor) return;
-  if (editor.doc.kind !== 'draft') {
+async function saveDraft(session, explicit = false) {
+  if (!session) return;
+  if (session.doc.kind !== 'draft') {
     if (explicit) say('已发布的文章不会自动保存，改完按 Ctrl+P 更新上线。');
     return;
   }
-  clearTimeout(editor.saveTimer);
-  editor.saving = editor.saving.then(async () => {
-    const text = editor.buffer.text;
-    if (text === editor.savedText) return;
+  clearTimeout(session.saveTimer);
+  session.saving = session.saving.then(async () => {
+    const text = documentText(session);
+    if (text === session.savedText) return;
     try {
-      await writeFile(editor.doc.file, text, 'utf8');
-      editor.savedText = text;
+      await writeFile(session.doc.file, text, 'utf8');
+      session.savedText = text;
     } catch (error) {
       say(`保存失败：${error.message}`, 'error', true);
     }
   });
-  await editor.saving;
+  await session.saving;
   if (explicit) say('已保存。', 'ok');
   render();
 }
 
 async function leaveEditor() {
   const editor = state.editor;
-  if (editor.doc.kind === 'post' && editor.buffer.text !== editor.savedText && !editor.leaving) {
+  if (editor.doc.kind === 'post' && documentText(editor) !== editor.savedText && !editor.leaving) {
     editor.leaving = true;
     say('这篇有还没发布的修改。按 Ctrl+P 更新上线，或者再按一次 Esc 放弃修改。', 'error', true);
     return;
   }
-  await saveDraft();
+  await saveDraft(editor);
   closeEditor();
   // 什么都没写的新草稿直接删掉，不留空壳。
-  if (editor.doc.kind === 'draft' && isBlankDraft(editor.buffer.text)) await rm(editor.doc.file, { force: true });
+  if (editor.doc.kind === 'draft' && isBlankDraft(documentText(editor))) await rm(editor.doc.file, { force: true });
   await refresh();
   const index = items().findIndex((doc) => doc.file === editor.doc.file);
   if (index >= 0) state.selected = index;
@@ -476,10 +491,8 @@ function closeEditor() {
 }
 
 async function publishFromEditor() {
-  const editor = state.editor;
-  await saveDraft();
-  const doc = editor.doc.kind === 'post' ? { ...editor.doc, text: editor.buffer.text } : editor.doc;
-  await openPublish(doc);
+  await saveDraft(state.editor);
+  openForm(state.editor);
 }
 
 /** 计算正文这一栏的位置：最宽 76 格，居中；开着 AI 面板时让出右边。 */
@@ -508,7 +521,7 @@ function renderEditor(width, height) {
   // 内容变短（比如撤销了一大段粘贴）时不留着空白往上滚。
   editor.scroll = clamp(editor.scroll, 0, Math.max(0, rows.length - textRows));
 
-  const styles = lineStyles(buffer.lines, buffer.frontmatterEnd());
+  const styles = lineStyles(buffer.lines);
   // AI 在改的那一段，左边画一条竖线。
   const marked = ['polish', 'ask'].includes(editor.ai?.action) ? editor.ai.paragraph : null;
   const body = [];
@@ -530,24 +543,18 @@ function renderEditor(width, height) {
   const cursorCol = margin + widthOf(buffer.parts().slice(rows[current].start, buffer.col));
   if (editor.popup) drawPopup(body, current - editor.scroll, area, margin, visible);
 
-  // 顶部：草稿还是已发布、标题、保存状态、字数。
+  // 顶部：草稿还是已发布、标题（起了才有）、保存状态、字数。
   const doc = editor.doc;
-  const title = titleOf(buffer.text) || '（未命名）';
-  const dirty = buffer.text !== editor.savedText;
+  const title = readFields(editor.head, buffer.text).title;
+  const label = [[doc.kind === 'draft' ? ' 草稿' : ' 已发布', 'dim'], ...(title ? [[' · ', 'dim'], [title, 'bold']] : [])];
+  const dirty = documentText(editor) !== editor.savedText;
   const status = doc.kind === 'draft' ? (dirty ? '保存中' : '已保存') : dirty ? '有修改，还没发布' : `/posts/${doc.id}/`;
-  const header = paint(
-    spread(
-      [[doc.kind === 'draft' ? ' 草稿 · ' : ' 已发布 · ', 'dim'], [title, 'bold']],
-      [[`${status} · ${wordCount(buffer.text)} 字 `, 'dim']],
-      width,
-    ),
-    width,
-  );
+  const header = paint(spread(label, [[`${status} · ${wordCount(buffer.text)} 字 `, 'dim']], width), width);
 
   let screenRows = [header, paint([], width)];
   if (side) {
     const aiRows = renderAiPanel(panel, height - 2);
-    screenRows[0] = paint(spread([[doc.kind === 'draft' ? ' 草稿 · ' : ' 已发布 · ', 'dim'], [title, 'bold']], [], area), area) + paint([['│', 'dim']], 1) + aiRows[0];
+    screenRows[0] = paint(spread(label, [], area), area) + paint([['│', 'dim']], 1) + aiRows[0];
     screenRows[1] = paint([], area) + paint([['│', 'dim']], 1) + aiRows[1];
     body.forEach((row, index) => screenRows.push(row + paint([['│', 'dim']], 1) + aiRows[index + 2]));
   } else if (editor.ai) {
@@ -585,7 +592,9 @@ function editorBottom(width) {
     ? [[' ↑↓ 选文章 · Tab 插入链接 · Esc 关掉', 'dim']]
     : editor.buffer.linkQuery() !== null && !state.docs.posts.length
       ? [[' 还没有发布的文章可以链接。', 'dim']]
-      : [[` ${fieldHint(editor.buffer)}`, 'dim']]);
+      : doc.kind === 'draft' && !editor.buffer.text.trim()
+        ? [[' 直接写正文。标题、导语和主题，发布时再填。', 'dim']]
+        : []);
   const keys =
     doc.kind === 'draft'
       ? ' Ctrl+P 发布 · Ctrl+K AI 助手 · Ctrl+Z 撤销 · Esc 回到列表'
@@ -593,27 +602,11 @@ function editorBottom(width) {
   return { rows: [paint(hint, width), paint([[keys, 'dim']], width)] };
 }
 
-/** 光标在 frontmatter 的某一项上时，提示这一项怎么写。 */
-function fieldHint(buffer) {
-  if (buffer.line === 0 || buffer.line >= buffer.frontmatterEnd()) return '';
-  const key = buffer.lines[buffer.line].match(/^([A-Za-z_][\w-]*)\s*[:：]/)?.[1];
-  return FIELD_HINTS[key] ?? '';
-}
-
-function titleOf(text) {
-  const { data, body } = splitFrontmatter(text);
-  return unquote(data.title) || headingTitle(body);
-}
-
-/** 每一行每个字的样式：frontmatter 的键、代码是灰的，标题加粗，[[链接]] 和图片用强调色。 */
-function lineStyles(lines, frontmatterEnd) {
+/** 每一行每个字的样式：代码是灰的，标题加粗，[[链接]] 和图片用强调色。 */
+function lineStyles(lines) {
   let fence = '';
-  return lines.map((line, index) => {
+  return lines.map((line) => {
     const parts = graphemes(line);
-    if (index <= frontmatterEnd) {
-      const keyLength = index === 0 || index === frontmatterEnd ? parts.length : graphemes(line.match(/^[A-Za-z_][\w-]*\s*[:：]/)?.[0] ?? '').length;
-      return parts.map((_, i) => (i < keyLength ? 'dim' : 'plain'));
-    }
     const marker = line.match(/^ {0,3}(`{3,}|~{3,})/)?.[1];
     if (fence || marker) {
       if (!fence) fence = marker;
@@ -734,7 +727,7 @@ async function runAi(action, request = '') {
   editor.ai = ai;
   render();
   try {
-    const messages = buildMessages(action, { article: editor.buffer.text, paragraph: paragraph?.text, request });
+    const messages = buildMessages(action, { article: aiArticle(editor), paragraph: paragraph?.text, request });
     for await (const part of streamReply(config, messages, ai.controller.signal)) {
       if (part.text) {
         ai.text += part.text;
@@ -787,8 +780,9 @@ function aiPanelKey(key) {
     buffer.replaceLines(ai.paragraph.start, ai.paragraph.end, text);
     close('这一段换好了，不满意按 Ctrl+Z 撤回。');
   } else if (ai.action === 'titles' && key.name === 'text' && ai.titles?.[Number(key.text) - 1]) {
-    setTitle(buffer, ai.titles[Number(key.text) - 1]);
-    close(`标题换成了「${ai.titles[Number(key.text) - 1]}」。`);
+    const title = ai.titles[Number(key.text) - 1];
+    retitle(editor, title);
+    close(`标题定为「${title}」，发布时还能改。`);
   } else if (ai.action === 'ask' && key.name === 'enter') {
     if (ai.paragraph) {
       buffer.setCursor(ai.paragraph.end, Infinity);
@@ -803,16 +797,26 @@ function aiPanelKey(key) {
   }
 }
 
-/** 标题写在 title 里就改 title；用的是正文第一行的「# 标题」就改那一行。 */
-function setTitle(buffer, title) {
-  const end = buffer.frontmatterEnd();
-  const titleLine = buffer.lines.findIndex((line, index) => index < end && /^title\s*[:：]\s*\S/.test(line));
-  const headingLine = buffer.lines.findIndex((line, index) => index > end && line.trim());
-  if (titleLine < 0 && /^#\s/.test(buffer.lines[headingLine] ?? '')) {
-    buffer.replaceLines(headingLine, headingLine, `# ${title}`);
-  } else {
-    buffer.setField('title', title);
+/** 发给 AI 的全文：填过的标题、导语放在正文前面。 */
+function aiArticle(session) {
+  const { title, description } = readFields(session.head);
+  return [title && `标题：${title}`, description && `导语：${description}`, session.buffer.text].filter(Boolean).join('\n\n');
+}
+
+/**
+ * 换标题：写进不显示的 frontmatter。正文第一行的「# 标题」原来就是标题时，那一行也一起换，
+ * 不然发布出去会多一个旧标题。
+ */
+function retitle(session, title) {
+  const buffer = session.buffer;
+  const old = readFields(session.head, buffer.text).title;
+  const first = buffer.lines.findIndex((line) => line.trim());
+  if (title && old && title !== old && headingTitle(buffer.lines[first] ?? '') === old) {
+    const { line, col } = buffer;
+    buffer.replaceLines(first, first, `# ${title}`);
+    buffer.setCursor(line, col);
   }
+  session.head = writeFields(session.head, { title });
 }
 
 function renderAiPanel(width, height) {
@@ -840,32 +844,279 @@ function renderAiPanel(width, height) {
   return rows;
 }
 
-/* ---------- 发布 ---------- */
+/* ---------- 发布页：标题、导语、主题、网址 ---------- */
 
-async function openPublish(doc) {
-  const text = doc.text ?? (await readFile(doc.file, 'utf8'));
-  const publishing = { doc, phase: 'confirm', step: '', done: [], problems: [], error: '', title: titleOf(text), post: null, result: null };
+/** 打开发布页。session 是编辑器里的这一篇，或者从列表直接打开的草稿。 */
+function openForm(session) {
+  const fields = readFields(session.head, session.buffer.text);
+  const draft = session.doc.kind === 'draft';
+  const input = (text) => {
+    const buffer = new TextBuffer(text);
+    buffer.setCursor(0, Infinity);
+    return buffer;
+  };
+  const form = {
+    session,
+    inputs: {
+      title: input(fields.title),
+      description: input(fields.description),
+      // 已发布的文章不能改网址；发布时间只有草稿里手写过才显示。
+      slug: draft ? input(fields.slug) : null,
+      date: draft && fields.date ? input(fields.date) : null,
+    },
+    tags: fields.tags,
+    chips: [...CHIPS, ...fields.tags.filter((tag) => !CHIPS.includes(tag))],
+    chip: 0,
+    focus: 'title',
+    error: '',
+    problems: [],
+  };
+  // 光标停在第一个没填的地方；都填好了就停在「发布」上，按 Enter 就发。
+  form.focus = firstEmpty(form) ?? 'submit';
+  state.form = form;
+  state.view = 'form';
+  clearMessage();
+}
+
+function focusOrder(form) {
+  return ['title', 'description', 'tags', 'slug', 'date', 'submit'].filter(
+    (name) => name === 'tags' || name === 'submit' || form.inputs[name],
+  );
+}
+
+function firstEmpty(form) {
+  if (!form.inputs.title.text.trim()) return 'title';
+  if (!form.inputs.description.text.trim()) return 'description';
+  if (!form.tags.length) return 'tags';
+  return null;
+}
+
+/** 检查没过时，光标跳到第一个要改的那一项。 */
+function fieldWithProblem(form, problems) {
+  const text = problems.join('\n');
+  if (/^(?:缺标题|已经有一篇文章叫)/m.test(text)) return 'title';
+  if (/^缺导语/m.test(text)) return 'description';
+  if (/^缺主题/m.test(text)) return 'tags';
+  if (form.inputs.slug && /^网址/m.test(text)) return 'slug';
+  if (form.inputs.date && /^发布时间/m.test(text)) return 'date';
+  return null;
+}
+
+/** 发布页上现在填的值，主题按固定的顺序排。 */
+function formValues(form) {
+  const text = (name) => form.inputs[name].text.replace(/\s+/g, ' ').trim();
+  return {
+    title: text('title'),
+    description: text('description'),
+    tags: form.chips.filter((chip) => form.tags.includes(chip)),
+    ...(form.inputs.slug && { slug: text('slug') }),
+    ...(form.inputs.date && { date: text('date') }),
+  };
+}
+
+/** 把填的写回这一篇（草稿随后存进文件）。 */
+function applyForm(form) {
+  const values = formValues(form);
+  retitle(form.session, values.title);
+  form.session.head = writeFields(form.session.head, values);
+}
+
+async function formKey(key) {
+  const form = state.form;
+  const { name, ctrl, alt } = key;
+  if (name === 'escape' || (ctrl && name === 'c')) return leaveForm();
+  if (ctrl && name === 'p') return submitForm();
+
+  const order = focusOrder(form);
+  const step = (delta) => {
+    form.focus = order[clamp(order.indexOf(form.focus) + delta, 0, order.length - 1)];
+  };
+  if (name === 'up' || name === 'backtab') return step(-1);
+  if (name === 'down' || name === 'tab') return step(1);
+  if (name === 'enter') return form.focus === 'submit' ? submitForm() : step(1);
+  if (form.focus === 'tags') return tagKey(form, key);
+
+  const input = form.inputs[form.focus];
+  if (!input) return;
+  if (name === 'text' || name === 'paste') input.insert(key.text.replace(/\s*\n\s*/g, ' '));
+  else if (name === 'backspace') alt || ctrl ? input.deleteWordBackward() : input.backspace();
+  else if (name === 'delete') input.deleteForward();
+  else if (name === 'left') alt || ctrl ? input.wordLeft() : input.left();
+  else if (name === 'right') alt || ctrl ? input.wordRight() : input.right();
+  else if (name === 'home' || (ctrl && name === 'a')) input.home();
+  else if (name === 'end' || (ctrl && name === 'e')) input.end();
+  else if (ctrl && name === 'w') input.deleteWordBackward();
+  else if (ctrl && name === 'z') input.undo();
+  else if (ctrl && name === 'y') input.redo();
+}
+
+/** 主题：←→ 挑，空格选中或取消，数字键直接选第几个。 */
+function tagKey(form, key) {
+  const count = form.chips.length;
+  if (key.name === 'left') form.chip = (form.chip + count - 1) % count;
+  else if (key.name === 'right') form.chip = (form.chip + 1) % count;
+  else if (key.name === 'text') {
+    // 输入法打出的全角空格、全角数字也算。
+    for (const char of key.text.normalize('NFKC')) {
+      const number = Number(char);
+      if (char === ' ') toggleTag(form, form.chip);
+      else if (number >= 1 && number <= count) toggleTag(form, (form.chip = number - 1));
+    }
+  }
+}
+
+function toggleTag(form, index) {
+  const chip = form.chips[index];
+  form.tags = form.tags.includes(chip) ? form.tags.filter((tag) => tag !== chip) : [...form.tags, chip];
+}
+
+/** Esc：填了的都留着（草稿存进文件），回到编辑器或列表。 */
+async function leaveForm() {
+  const form = state.form;
+  const fromEditor = state.editor === form.session;
+  applyForm(form);
+  state.form = null;
+  state.view = fromEditor ? 'editor' : 'list';
+  await saveDraft(form.session);
+  if (!fromEditor) await refresh();
+}
+
+/** 先在本地检查一遍：有问题列在发布页下面；没问题就开始发布。 */
+async function submitForm() {
+  const form = state.form;
+  const { session } = form;
+  applyForm(form);
+  await saveDraft(session);
+  const existing = session.doc.kind === 'post' ? session.doc : null;
+  const text = documentText(session);
   try {
-    publishing.post = preparePost(text, { posts: state.docs.posts, existing: doc.kind === 'post' ? doc : null });
-    publishing.title = publishing.post.title;
+    preparePost(text, { posts: state.docs.posts, existing });
   } catch (error) {
     if (!(error instanceof BlogError)) throw error;
-    publishing.phase = 'invalid';
-    publishing.error = error.message;
-    publishing.problems = error.problems;
+    form.error = error.message;
+    form.problems = error.problems;
+    form.focus = fieldWithProblem(form, error.problems) ?? form.focus;
+    return;
   }
-  state.publishing = publishing;
+  form.error = '';
+  form.problems = [];
+  state.publishing = {
+    doc: existing ? { ...existing, text } : session.doc,
+    phase: 'running',
+    step: '',
+    done: [],
+    problems: [],
+    error: '',
+    title: readFields(session.head, session.buffer.text).title,
+    result: null,
+  };
   state.view = 'publish';
+  await runPublish();
 }
+
+function renderForm(width, height) {
+  const form = state.form;
+  const draft = form.session.doc.kind === 'draft';
+  const verb = draft ? '发布' : '更新上线';
+  const rows = [
+    paint([[draft ? ' 发布新文章' : ` 更新「${formValues(form).title || '未命名'}」`, 'strong']], width),
+    paint([], width),
+  ];
+  const columns = Math.max(10, Math.min(72, width - LABEL_WIDTH - 1));
+  const indent = [[' '.repeat(LABEL_WIDTH)]];
+  const label = (name) => {
+    const active = form.focus === name;
+    return [[active ? ' › ' : '   ', 'accent'], [FORM_FIELDS[name].label, active ? 'strong' : 'dim'], ['  ']];
+  };
+  let cursor = null;
+
+  // 一行输入框，长了就折行；没填时显示灰字。
+  const addInput = (name, placeholder = FORM_FIELDS[name].placeholder) => {
+    const input = form.inputs[name];
+    if (!input) return;
+    const lines = layout(input.lines, columns);
+    if (input.text) {
+      lines.forEach((line, index) => {
+        const text = input.parts(line.line).slice(line.start, line.end).join('');
+        rows.push(paint([...(index ? indent : label(name)), [text]], width));
+      });
+    } else {
+      rows.push(paint([...label(name), [placeholder, 'dim']], width));
+    }
+    if (form.focus === name) {
+      const current = cursorRow(lines, input);
+      const row = input.text ? rows.length - lines.length + current : rows.length - 1;
+      cursor = { row, col: LABEL_WIDTH + widthOf(input.parts().slice(lines[current].start, input.col)) };
+    }
+  };
+
+  addInput('title');
+  addInput('description');
+
+  // 主题一个个排开，放不下就换行。
+  let segments = label('tags');
+  let used = LABEL_WIDTH;
+  form.chips.forEach((chip, index) => {
+    const on = form.tags.includes(chip);
+    const text = `${on ? '●' : '○'} ${chip}`;
+    const size = textWidth(text) + 3;
+    if (used + size > width && used > LABEL_WIDTH) {
+      rows.push(paint(segments, width));
+      segments = [...indent];
+      used = LABEL_WIDTH;
+    }
+    const style = form.focus === 'tags' && index === form.chip ? 'inverse' : on ? 'accent' : 'dim';
+    segments.push([text, style], ['   ']);
+    used += size;
+  });
+  rows.push(paint(segments, width));
+
+  if (draft) {
+    addInput('slug', `留空就用 /posts/${nextPostId(zonedTime().day, state.docs.posts)}/`);
+    addInput('date');
+  } else {
+    rows.push(paint([...label('slug'), [`/posts/${form.session.doc.id}/`], ['  已发布，不能改', 'dim']], width));
+  }
+
+  rows.push(paint([], width));
+  rows.push(paint([['   '], [`[ ${verb}到 ${HOST} ]`, form.focus === 'submit' ? 'inverse' : 'dim']], width));
+
+  if (form.error || form.problems.length) {
+    rows.push(paint([], width));
+    for (const line of wrap(form.error, width - 4)) rows.push(paint([[`   ${line}`, 'error']], width));
+    for (const problem of form.problems) {
+      wrap(`· ${problem}`, width - 6).forEach((line, index) => rows.push(paint([[index ? `     ${line}` : `   ${line}`]], width)));
+    }
+  }
+
+  while (rows.length < height - 2) rows.push(paint([], width));
+  rows.length = height - 2;
+  const back = state.editor === form.session ? 'Esc 回去写正文' : 'Esc 回到列表';
+  const keys =
+    form.focus === 'submit'
+      ? ` Enter ${verb} · ↑ 回去改 · ${back}`
+      : ` ↑↓ 换一项 · Enter 下一项 · Ctrl+P ${verb} · ${back}`;
+  rows.push(paint(messageSegments() ?? [[` ${FORM_FIELDS[form.focus].hint}`, 'dim']], width));
+  rows.push(paint([[keys, 'dim']], width));
+  if (cursor && cursor.row >= height - 2) cursor = null;
+  return { rows, cursor };
+}
+
+/* ---------- 发布 ---------- */
 
 async function publishKey(key) {
   const publishing = state.publishing;
-  const back = key.name === 'escape' || key.name === 'q' || (key.ctrl && key.name === 'c');
-  if (publishing.phase === 'confirm' && key.name === 'enter') return runPublish();
   if (publishing.phase === 'running') return;
   if (key.name === 'o' && publishing.result) return openUrl(publishing.result.url);
-  if (back || (key.name === 'enter' && publishing.phase !== 'confirm')) {
-    state.publishing = null;
+  if (!['escape', 'enter', 'q'].includes(key.name) && !(key.ctrl && key.name === 'c')) return;
+  state.publishing = null;
+  if (state.form) {
+    // 没发出去：回到发布页，原因列在下面。
+    state.form.error = publishing.error;
+    state.form.problems = publishing.problems;
+    state.form.focus = fieldWithProblem(state.form, publishing.problems) ?? state.form.focus;
+    state.view = 'form';
+  } else {
     state.view = state.editor ? 'editor' : 'list';
   }
 }
@@ -886,8 +1137,9 @@ async function runPublish() {
     });
     publishing.done.push(publishing.step);
     publishing.result = result;
-    // 草稿已经变成文章（或者文章已经更新），编辑器不用再开着。
+    // 草稿已经变成文章（或者文章已经更新），编辑器和发布页不用再开着。
     if (state.editor) closeEditor();
+    state.form = null;
     state.view = 'publish';
     await refresh();
     if (result.pushed) {
@@ -931,47 +1183,33 @@ function renderPublish(width, height) {
     for (const line of wrap(text, width - indent.length - 1)) add([[indent + line, style]]);
   };
 
-  if (publishing.phase === 'confirm') {
-    const { post } = publishing;
-    add([['   地址  ', 'dim'], [`/posts/${post.id}/`]]);
-    add([['   主题  ', 'dim'], [post.tags.join('、')]]);
-    add([['   导语  ', 'dim'], [post.description]]);
-    add([]);
-    add([[`   按 Enter ${verb}到 ${HOST}，Esc 取消。`, 'accent']]);
-  } else if (publishing.phase === 'invalid') {
-    add([[`   ${publishing.error}`, 'error']]);
+  for (const [step, label] of STEPS) {
+    const done = publishing.done.includes(step);
+    const active = publishing.step === step && !done;
+    const failed = active && publishing.phase === 'failed';
+    const icon = done ? ['✓', 'ok'] : failed ? ['✗', 'error'] : active ? [spinner(), 'accent'] : ['·', 'dim'];
+    const extra = step === 'live' && active && state.deploy?.status === 'waiting' ? `（${Math.round((Date.now() - state.deploy.since) / 1000)} 秒）` : '';
+    add([[`   ${icon[0]} `, icon[1]], [label + extra, done || active ? 'plain' : 'dim']]);
+  }
+  add([]);
+  if (publishing.phase === 'failed') {
+    addWrapped(publishing.error, 'error');
     for (const problem of publishing.problems) addWrapped(`· ${problem}`, 'plain', '   ');
-  } else {
-    for (const [step, label] of STEPS) {
-      const done = publishing.done.includes(step);
-      const active = publishing.step === step && !done;
-      const failed = active && publishing.phase === 'failed';
-      const icon = done ? ['✓', 'ok'] : failed ? ['✗', 'error'] : active ? [spinner(), 'accent'] : ['·', 'dim'];
-      const extra = step === 'live' && active && state.deploy?.status === 'waiting' ? `（${Math.round((Date.now() - state.deploy.since) / 1000)} 秒）` : '';
-      add([[`   ${icon[0]} `, icon[1]], [label + extra, done || active ? 'plain' : 'dim']]);
-    }
-    add([]);
-    if (publishing.phase === 'failed') {
-      addWrapped(publishing.error, 'error');
-      for (const problem of publishing.problems) addWrapped(`· ${problem}`, 'plain', '   ');
-    } else if (publishing.phase === 'done') {
-      add([['   已上线：', 'ok'], [publishing.result.url]]);
-    } else if (publishing.phase === 'timeout') {
-      addWrapped('已经推送到 GitHub，但等了 10 分钟网站还没更新。去 GitHub 仓库的 Actions 页面看看部署有没有出错。', 'error');
-    } else if (publishing.phase === 'waiting') {
-      addWrapped('已经推送到 GitHub，网站正在部署，一般一两分钟。可以先回去写别的，好了会在列表下面提示。', 'dim');
-    }
+  } else if (publishing.phase === 'done') {
+    add([['   已上线：', 'ok'], [publishing.result.url]]);
+  } else if (publishing.phase === 'timeout') {
+    addWrapped('已经推送到 GitHub，但等了 10 分钟网站还没更新。去 GitHub 仓库的 Actions 页面看看部署有没有出错。', 'error');
+  } else if (publishing.phase === 'waiting') {
+    addWrapped('已经推送到 GitHub，网站正在部署，一般一两分钟。可以先回去写别的，好了会在列表下面提示。', 'dim');
   }
 
   while (rows.length < height - 1) rows.push(paint([], width));
   const keys = {
-    confirm: `Enter ${verb} · Esc 取消`,
-    invalid: 'Esc 回去改',
     running: '正在发布，稍等…',
     waiting: 'Esc 先回去（会在后台继续等）',
     done: 'o 打开网页 · Esc 回到列表',
     timeout: 'Esc 回到列表',
-    failed: state.editor ? 'Esc 回去改' : 'Esc 回到列表',
+    failed: state.form ? 'Esc 回去改' : 'Esc 回到列表',
   }[publishing.phase];
   rows.length = height - 1;
   rows.push(paint([[` ${keys}`, 'dim']], width));

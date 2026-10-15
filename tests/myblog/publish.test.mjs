@@ -7,7 +7,17 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
-import { BlogError, createDraft, listDocs, publish, pushPending, unpushedCount } from '../../scripts/myblog/blog.mjs';
+import {
+  BlogError,
+  createDraft,
+  joinDocument,
+  listDocs,
+  publish,
+  pushPending,
+  splitDocument,
+  unpushedCount,
+  writeFields,
+} from '../../scripts/myblog/blog.mjs';
 
 // 北京时间 2026-10-14 21:30:00
 const NOW = new Date('2026-10-14T13:30:00Z');
@@ -114,6 +124,27 @@ test('连发 3 篇：每篇都推送到 GitHub，草稿删掉，链接和顺序�
   assert.equal(git(blog.remote, 'log', '--format=%s', 'main'), ['发布：第三篇的观点', '发布：第二篇的观点', '发布：复利不只是钱的事', 'init'].join('\n'));
   assert.equal(git(blog.root, 'status', '--porcelain'), '');
   assert.equal(await unpushedCount(blog.root), 0);
+});
+
+test('只写了正文的草稿：发布页填的标题、导语、主题写进去就能发布', async () => {
+  const blog = await makeBlog();
+  const file = await createDraft(blog.root, NOW);
+  assert.equal(await readFile(file, 'utf8'), '', '新草稿是空文件');
+  await writeFile(file, '正文第一段。\n\n第二段。\n', 'utf8');
+
+  // 发布页做的事：拆开，写进填的几项，拼回去存好。
+  const { head, body } = splitDocument(await readFile(file, 'utf8'));
+  const fields = { title: '只写正文', description: '一句导语', tags: ['AI', '精选'], slug: '' };
+  await writeFile(file, joinDocument(writeFields(head, fields), body), 'utf8');
+
+  const doc = (await listDocs(blog.root)).drafts.find((draft) => draft.file === file);
+  const result = await publish(doc, { root: blog.root, now: NOW, build: okBuild });
+  assert.equal(result.title, '只写正文');
+  assert.equal(
+    await readFile(path.join(blog.root, 'src/content/posts/20261014.md'), 'utf8'),
+    '---\ntitle: "只写正文"\ndate: 2026-10-14T21:30:00+08:00\ndescription: "一句导语"\ntags: ["AI", "精选"]\n---\n\n正文第一段。\n\n第二段。\n',
+  );
+  assert.equal(existsSync(file), false);
 });
 
 test('缺东西时一条条列出来，不同步、不构建、不提交', async () => {
