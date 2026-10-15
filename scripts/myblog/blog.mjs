@@ -9,12 +9,11 @@ import { SITE_URL } from '../../site.config.mjs';
 
 export const ROOT = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 export const TOPICS = ['AI', '财富', '生意', '读书', '产品'];
+/** 挂上这个主题的文章会出现在首页「精选」里（和 src/utils/posts.ts 的 FEATURED_TOPIC 一致）。 */
+export const FEATURED = '精选';
 const TIME_ZONE = 'Asia/Shanghai';
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const IMAGE_EXTENSIONS = /\.(avif|gif|jpe?g|png|svg|webp)$/i;
-
-// 新草稿的骨架：标题写一句观点，导语写一句话，主题至少一个，slug 可以不写。
-const DRAFT_TEMPLATE = '---\ntitle: \ndescription: \ntags: \nslug: \n---\n\n';
 
 export class BlogError extends Error {
   /** problems 是逐条的原因，界面会一条一行列出来。 */
@@ -40,7 +39,8 @@ export function postUrl(id) {
 
 /* ---------- frontmatter ---------- */
 
-const FRONTMATTER = /^\uFEFF?---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)?---[ \t]*(?:\r?\n|$)/;
+// 到第一个 --- 为止；`---\n---` 是空的 frontmatter。
+const FRONTMATTER = /^\uFEFF?---[ \t]*\r?\n(?:([\s\S]*?)\r?\n)??---[ \t]*(?:\r?\n|$)/;
 
 /**
  * 宽松地读 frontmatter：`键: 值`（中文冒号也行）、`[a, b]` 和一行一个 `- a` 的列表、整行 # 注释。
@@ -114,6 +114,66 @@ function dropFirstHeading(body) {
   return body.replace(/^(?:[ \t]*\r?\n)*#[ \t][^\r\n]*(?:\r?\n)*/, '');
 }
 
+/* ---------- 编辑器里只放正文 ---------- */
+
+/**
+ * 编辑器里只显示正文，标题、导语这些在发布页里填。
+ * 把一篇拆成 head（frontmatter 原样，含前后两行 ---；没有时是空字符串）和正文，正文开头的空行去掉。
+ */
+export function splitDocument(text) {
+  const clean = String(text).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  const match = clean.match(FRONTMATTER);
+  const head = match ? `${match[0].replace(/\n$/, '')}\n` : '';
+  const body = (match ? clean.slice(match[0].length) : clean).replace(/^(?:[ \t]*\n)+/, '');
+  return { head, body };
+}
+
+/** splitDocument 反过来：frontmatter、空一行、正文。正文第一行是 --- 时先放一个空的 frontmatter，免得被当成 frontmatter。 */
+export function joinDocument(head, body) {
+  const top = head || (/^---[ \t]*(?:\n|$)/.test(body) ? '---\n---\n' : '');
+  return top ? `${top}\n${body}` : body;
+}
+
+/** 发布页要填的几项。没写标题时用正文第一行的「# 标题」。 */
+export function readFields(head, body = '') {
+  const { data } = splitFrontmatter(head);
+  return {
+    title: unquote(data.title) || headingTitle(body),
+    description: unquote(data.description),
+    tags: parseTags(data.tags),
+    slug: unquote(data.slug),
+    date: unquote(data.date),
+  };
+}
+
+/**
+ * 把发布页填的几项写进 frontmatter：替换原来那一项（连同一行一个的列表），没有就加在最后，值为空就删掉。
+ * 别的项和顺序不动。返回新的 head，什么都不剩时返回空字符串。
+ */
+export function writeFields(head, fields) {
+  const lines = head ? head.replace(/\n$/, '').split('\n') : ['---', '---'];
+  for (const [key, value] of Object.entries(fields)) {
+    // 同一项写了好几次时全删掉，新值放在第一次出现的位置。
+    let at = -1;
+    for (let index = lines.length - 2; index > 0; index -= 1) {
+      if (lines[index].match(/^([A-Za-z_][\w-]*)\s*[:：]/)?.[1] !== key) continue;
+      let end = index + 1;
+      while (end < lines.length - 1 && /^(?:\s+\S|\s*-(?:\s|$))/.test(lines[end])) end += 1;
+      lines.splice(index, end - index);
+      at = index;
+    }
+    const line = fieldLine(key, value);
+    if (line) lines.splice(at > 0 ? at : lines.length - 1, 0, line);
+  }
+  return lines.length > 2 ? `${lines.join('\n')}\n` : '';
+}
+
+function fieldLine(key, value) {
+  if (Array.isArray(value)) return value.length ? `${key}: [${value.map((item) => JSON.stringify(item)).join(', ')}]` : '';
+  const text = String(value ?? '').trim();
+  return text ? `${key}: ${JSON.stringify(text)}` : '';
+}
+
 /* ---------- 草稿和文章 ---------- */
 
 /** 读一篇草稿或文章，取出列表和检查要用的信息。 */
@@ -128,6 +188,8 @@ export function describe(text, { file, kind, mtime = 0 }) {
     // 网站上的地址：有 slug 用 slug，没有就用文件名（和 Astro 的规则一致）。
     id: kind === 'post' ? slug || slugify(baseName) : '',
     title: unquote(data.title) || headingTitle(body),
+    // 还没有标题的草稿，列表里显示正文的第一句。
+    excerpt: excerptOf(body),
     description: unquote(data.description),
     tags: parseTags(data.tags),
     slug,
@@ -135,12 +197,9 @@ export function describe(text, { file, kind, mtime = 0 }) {
   };
 }
 
-export function missingFields(doc) {
-  return [
-    !doc.title && '标题',
-    !doc.description && '导语',
-    !doc.tags.length && '主题',
-  ].filter(Boolean);
+function excerptOf(body) {
+  const line = body.split(/\r?\n/).map((text) => text.trim()).find(Boolean) ?? '';
+  return Array.from(line.replace(/^(?:#{1,6}|>|[-*+]|\d+[.)])\s+/, '')).slice(0, 80).join('');
 }
 
 export async function listDocs(root = ROOT) {
@@ -173,17 +232,18 @@ async function loadDocs(directory, kind) {
   );
 }
 
+/** 新草稿是个空文件：打开就写正文，标题、导语和主题发布时再填。 */
 export async function createDraft(root = ROOT, now = new Date()) {
   const { drafts } = blogPaths(root);
   await mkdir(drafts, { recursive: true });
   const stamp = zonedTime(now).stamp;
   let file = path.join(drafts, `${stamp}.md`);
   for (let n = 2; existsSync(file); n += 1) file = path.join(drafts, `${stamp}-${n}.md`);
-  await writeFile(file, DRAFT_TEMPLATE, 'utf8');
+  await writeFile(file, '', 'utf8');
   return file;
 }
 
-/** 新建后一个字都没写的草稿（只有空骨架），退出编辑器时直接删掉。 */
+/** 一个字都没写的草稿（空文件，或者只有没填的 frontmatter），退出编辑器时直接删掉。 */
 export function isBlankDraft(text) {
   const { data, body } = splitFrontmatter(text);
   return !Object.keys(data).length && !body.trim();
@@ -257,21 +317,21 @@ export function preparePost(text, { posts, existing = null, now = new Date() }) 
   const date = typedDate ? normalizeDate(typedDate) : existing?.date || zonedTime(now).iso;
   const others = posts.filter((post) => post.file !== existing?.file);
 
-  if (!title) problems.push('缺标题：在 title: 后面写，或者在正文第一行写「# 标题」。');
-  if (!description) problems.push('缺导语：在 description: 后面写一句话，它是副标题，也是首页和 RSS 的摘要。');
-  if (!tags.length) problems.push(`缺主题：在 tags: 后面至少写一个，比如 ${TOPICS.join('、')}。`);
+  if (!title) problems.push('缺标题：一句话说出这篇的观点。');
+  if (!description) problems.push('缺导语：一句话，显示在标题下面，也是首页和 RSS 的摘要。');
+  if (!tags.length) problems.push(`缺主题：至少选一个，比如 ${TOPICS.join('、')}。`);
   if (!content.trim()) problems.push('正文还是空的。');
-  if (!date) problems.push(`date 的格式不对：「${typedDate}」。写成 2026-10-14 或 2026-10-14 21:30，或者删掉这一行，发布时会自动写上。`);
+  if (!date) problems.push(`发布时间的格式不对：「${typedDate}」。写成 2026-10-14 或 2026-10-14 21:30，或者删掉，发布时会自动写上。`);
   if (title && others.some((post) => sameText(post.title, title))) {
     problems.push(`已经有一篇文章叫「${title}」，换个标题，不然 [[ ]] 链接分不清是哪篇。`);
   }
 
   let id = existing?.id;
   if (existing) {
-    if (slug && slug !== existing.id) problems.push(`已发布的文章不能改地址（slug），它现在是 ${existing.id}。`);
+    if (slug && slug !== existing.id) problems.push(`已发布的文章不能改网址，它现在是 /posts/${existing.id}/。`);
   } else if (slug) {
-    if (!SLUG.test(slug)) problems.push(`slug 只能用小写英文、数字和连字符，现在是「${slug}」。`);
-    else if (isTaken(slug, posts)) problems.push(`slug「${slug}」已经被别的文章用了，换一个。`);
+    if (!SLUG.test(slug)) problems.push(`网址只能用小写英文、数字和连字符，现在是「${slug}」。`);
+    else if (isTaken(slug, posts)) problems.push(`网址「${slug}」已经被别的文章用了，换一个。`);
     id = slug;
   } else {
     id = nextPostId(zonedTime(now).day, posts);

@@ -112,28 +112,13 @@ test('折行和光标所在的屏幕行', () => {
   assert.equal(cursorRow(rows, buffer), 2);
 });
 
-test('改 frontmatter 里的一项', () => {
-  const buffer = new TextBuffer('---\ntitle: 旧标题\n---\n\n正文');
-  buffer.setCursor(4, 1);
-  buffer.setField('title', '新标题');
-  assert.equal(buffer.text, '---\ntitle: 新标题\n---\n\n正文');
-  buffer.setField('tags', 'AI');
-  assert.equal(buffer.text, '---\ntags: AI\ntitle: 新标题\n---\n\n正文');
-  assert.deepEqual(at(buffer), [5, 1]);
-
-  const bare = new TextBuffer('正文');
-  bare.setField('title', '标题');
-  assert.equal(bare.text, '---\ntitle: 标题\n---\n\n正文');
-  assert.equal(bare.line, 4);
-});
-
-test('光标所在的段落，frontmatter 和空行不算', () => {
-  const buffer = new TextBuffer('---\ntitle: x\n---\n\n第一段第一行\n第一段第二行\n\n第二段');
-  buffer.setCursor(5, 0);
-  assert.deepEqual(buffer.paragraph(), { start: 4, end: 5, text: '第一段第一行\n第一段第二行' });
+test('光标所在的段落，空行上没有', () => {
+  const buffer = new TextBuffer('第一段第一行\n第一段第二行\n\n第二段');
   buffer.setCursor(1, 0);
-  assert.equal(buffer.paragraph(), null);
-  buffer.setCursor(6, 0);
+  assert.deepEqual(buffer.paragraph(), { start: 0, end: 1, text: '第一段第一行\n第一段第二行' });
+  buffer.setCursor(3, 0);
+  assert.deepEqual(buffer.paragraph(), { start: 3, end: 3, text: '第二段' });
+  buffer.setCursor(2, 0);
   assert.equal(buffer.paragraph(), null);
 });
 
@@ -154,7 +139,8 @@ test('[[ 链接补全', () => {
   assert.equal(closed.col, 6);
 });
 
-test('字数：中文按字，英文按词，不算 frontmatter', () => {
-  assert.equal(wordCount('---\ntitle: 很长的标题\n---\n\n中文字 and English words.'), 6);
+test('字数：中文按字，英文按词', () => {
+  assert.equal(wordCount('中文字 and English words.'), 6);
+  assert.equal(wordCount('---\n分隔线不算字'), 6);
   assert.equal(wordCount(''), 0);
 });
