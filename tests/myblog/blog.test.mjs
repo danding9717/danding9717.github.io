@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execSync } from 'node:child_process';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,6 +17,7 @@ import {
   joinDocument,
   mapProse,
   normalizeDate,
+  outsideEditor,
   parseTags,
   planImages,
   preparePost,
@@ -430,4 +432,19 @@ test('构建失败时只留下出错原因', () => {
     '    at getBacklinks (file:///blog/dist/.prerender/chunks/posts.mjs:744:28)',
   ].join('\n');
   assert.deepEqual(buildErrors(link), ['文章 20261015-3 链接到了不存在的文章 /posts/nope/']);
+});
+
+test('用其他软件打开：设置了 MYBLOG_EDITOR 就用它，没设置就用系统里默认打开 .md 的软件', () => {
+  const file = "/博客/草稿/it's 1.md";
+  assert.deepEqual(outsideEditor(file, { env: {}, platform: 'darwin' }), { command: 'open', args: [file] });
+  assert.deepEqual(outsideEditor(file, { env: {}, platform: 'linux' }), { command: 'xdg-open', args: [file] });
+  assert.deepEqual(outsideEditor(file, { env: {}, platform: 'win32' }), { command: 'explorer', args: [file] });
+  assert.equal(outsideEditor(file, { env: { MYBLOG_EDITOR: '  ' }, platform: 'darwin' }).command, 'open');
+
+  const typora = outsideEditor(file, { env: { MYBLOG_EDITOR: ' open -a Typora ' }, platform: 'darwin' });
+  assert.equal(typora.custom, 'open -a Typora');
+  assert.equal(typora.command, `open -a Typora '/博客/草稿/it'\\''s 1.md'`);
+  // 路径里有空格、引号也能原样交给命令。
+  const echo = outsideEditor(file, { env: { MYBLOG_EDITOR: "printf '%s'" }, platform: 'linux' });
+  assert.equal(execSync(echo.command, { encoding: 'utf8' }), file);
 });
