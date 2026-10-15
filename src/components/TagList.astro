@@ -1,0 +1,30 @@
+---
+import type { Tag } from '../utils/posts';
+import { getTagUrl } from '../utils/posts';
+
+interface Props {
+  tags: Pick<Tag, 'name' | 'posts'>[] | string[];
+  /** 在每个标签后用括号注明篇数。 */
+  showCount?: boolean;
+  /** 写在最前面的说明文字，例如「标签：」。 */
+  label?: string;
+}
+
+const { showCount = false, label } = Astro.props;
+const tags = Astro.props.tags.map((tag) =>
+  typeof tag === 'string' ? { name: tag, count: 0 } : { name: tag.name, count: tag.posts.length },
+);
+---
+
+<p class="tag-list">
+  {label}
+  {
+    tags.map((tag, index) => (
+      <>
+        {index > 0 && '、'}
+        <a href={getTagUrl(tag.name)}>{tag.name}</a>
+        {showCount && <span class="tag-count">（{tag.count}）</span>}
+      </>
+    ))
+  }
+</p>

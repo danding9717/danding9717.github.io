@@ -6,32 +6,31 @@ import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { SITE_URL } from '../site.config.mjs';
-import { AI_ACTIONS, NO_KEY_MESSAGE, aiConfig, buildMessages, parseTitles, streamReply } from './myblog/ai.mjs';
 import {
   BlogError,
   FEATURED,
   PUBLISH_STEPS,
   ROOT,
-  TOPICS,
+  TAGS,
   createDraft,
+  defaultTitle,
   droppedImagePath,
   headingTitle,
   isBlankDraft,
   joinDocument,
   listDocs,
   liveVersion,
-  nextPostId,
   postUrl,
   preparePost,
   publish,
   pushPending,
   readFields,
   splitDocument,
+  tagSlug,
   trashDraft,
   unpushedCount,
   waitUntilLive,
   writeFields,
-  zonedTime,
 } from './myblog/blog.mjs';
 import { TextBuffer, cursorRow, layout, widthOf, wordCount } from './myblog/editor.mjs';
 import { Screen, clip, graphemes, paint, textWidth, wrap } from './myblog/terminal.mjs';
@@ -54,27 +53,19 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
   process.exit(1);
 }
 
-// AI 的 API key 可以写在博客目录的 .env 里。
-try {
-  process.loadEnvFile(path.join(ROOT, '.env'));
-} catch {
-  // 没有 .env 也没关系，可以用 shell 里 export 的变量。
-}
-
 const HOST = new URL(SITE_URL).host;
 const SPINNER = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
 const STEPS = [...PUBLISH_STEPS, ['live', '等待网站更新']];
 
 // 发布页上的几项：名字、提示和没填时显示的灰字。
 const FORM_FIELDS = {
-  title: { label: '标题', hint: '一句话说出这篇的观点，读标题就知道在说什么。', placeholder: '还没写' },
-  description: { label: '导语', hint: '一句话，显示在标题下面，也是首页和 RSS 的摘要。', placeholder: '还没写' },
-  tags: { label: '主题', hint: `←→ 挑，空格选中或取消，也可以直接按数字。选「${FEATURED}」会放进首页精选。` },
-  slug: { label: '网址', hint: '可选：小写英文、数字和连字符，比如 compound 就是 /posts/compound/。' },
+  title: { label: '标题', hint: '可选：一句话说出这篇的观点。不写就用日期，同一天第二篇加 -2。' },
+  description: { label: '导语', hint: '可选：一句话，显示在标题下面，也是首页和 RSS 的摘要。', placeholder: '可以不写' },
+  tags: { label: '标签', hint: `←→ 挑，空格选中或取消，直接打字新建。「${FEATURED}」会放进首页精选。` },
+  slug: { label: '网址', hint: '可选：文章链接的最后一段，填 compound 就是 /posts/compound/，发布后不能改。' },
   date: { label: '时间', hint: '发布时间，写成 2026-10-14 或 2026-10-14 21:30；删掉就用发布那一刻。', placeholder: '发布那一刻' },
   submit: { hint: '会先检查一遍，有问题列在下面，不会发出去。' },
 };
-const CHIPS = [...TOPICS, FEATURED];
 const LABEL_WIDTH = 9;
 
 const screen = new Screen();
@@ -92,7 +83,6 @@ const state = {
   publishing: null,
   frame: 0,
 };
-let renderPending = false;
 let ticker = null;
 let messageTimer = null;
 let quitting = false;
@@ -169,16 +159,6 @@ function items() {
 
 /* ---------- 绘制 ---------- */
 
-/** 流式输出时一帧只画一次。 */
-function requestRender() {
-  if (renderPending) return;
-  renderPending = true;
-  setTimeout(() => {
-    renderPending = false;
-    render();
-  }, 30);
-}
-
 function render() {
   if (!screen.active || hungUp) return;
   const width = screen.width;
@@ -189,12 +169,9 @@ function render() {
   keepTicking();
 }
 
-/** 发布、等上线、等 AI 时让转圈动画动起来。 */
+/** 发布、等上线时让转圈动画动起来。 */
 function keepTicking() {
-  const busy =
-    state.publishing?.phase === 'running' ||
-    state.deploy?.status === 'waiting' ||
-    ['thinking', 'writing'].includes(state.editor?.ai?.status);
+  const busy = state.publishing?.phase === 'running' || state.deploy?.status === 'waiting';
   if (busy && !ticker) {
     ticker = setInterval(() => {
       state.frame += 1;
@@ -360,7 +337,7 @@ async function openEditor(doc) {
   }
   const session = await openSession(doc);
   placeCursor(session.buffer, doc);
-  state.editor = Object.assign(session, { scroll: 0, popup: null, popupClosed: false, prompt: null, ai: null, leaving: false });
+  state.editor = Object.assign(session, { scroll: 0, popup: null, popupClosed: false, leaving: false });
   state.view = 'editor';
   clearMessage();
 }
@@ -390,8 +367,6 @@ function placeCursor(buffer, doc) {
 async function editorKey(key) {
   const editor = state.editor;
   const buffer = editor.buffer;
-  if (editor.ai) return aiPanelKey(key);
-  if (editor.prompt) return promptKey(key);
   if (editor.popup && popupKey(key)) return;
 
   const { name, ctrl, alt } = key;
@@ -402,7 +377,6 @@ async function editorKey(key) {
   }
   if (ctrl && name === 's') return saveDraft(editor, true);
   if (ctrl && name === 'p') return publishFromEditor();
-  if (ctrl && name === 'k') return openPrompt();
 
   const before = buffer.version;
   const columns = editorColumns(screen.width).columns;
@@ -484,7 +458,6 @@ function closeEditor() {
   const editor = state.editor;
   if (!editor) return;
   clearTimeout(editor.saveTimer);
-  editor.ai?.controller.abort();
   state.editor = null;
   state.view = 'list';
   clearMessage();
@@ -495,53 +468,41 @@ async function publishFromEditor() {
   openForm(state.editor);
 }
 
-/** 计算正文这一栏的位置：最宽 76 格，居中；开着 AI 面板时让出右边。 */
+/** 计算正文这一栏的位置：最宽 76 格，居中。 */
 function editorColumns(width) {
-  const side = Boolean(state.editor?.ai) && width >= 100;
-  const panel = side ? clamp(Math.floor(width * 0.4), 36, 64) : 0;
-  const area = width - panel - (side ? 1 : 0);
-  const columns = Math.max(10, Math.min(76, area - 4));
-  return { side, panel, area, columns, margin: Math.max(1, Math.floor((area - columns) / 2)) };
+  const columns = Math.max(10, Math.min(76, width - 4));
+  return { columns, margin: Math.max(1, Math.floor((width - columns) / 2)) };
 }
 
 function renderEditor(width, height) {
   const editor = state.editor;
   const buffer = editor.buffer;
-  const { side, panel, area, columns, margin } = editorColumns(width);
+  const { columns, margin } = editorColumns(width);
   const top = 2;
   const visible = height - 4;
-  // 窗口窄的时候 AI 面板盖住下半屏，光标要留在上半屏。
-  const overlayTop = Math.floor(visible / 2);
-  const textRows = editor.ai && !side ? overlayTop - 1 : visible;
 
   const rows = layout(buffer.lines, columns);
   const current = cursorRow(rows, buffer);
   if (current < editor.scroll) editor.scroll = current;
-  if (current >= editor.scroll + textRows) editor.scroll = current - textRows + 1;
+  if (current >= editor.scroll + visible) editor.scroll = current - visible + 1;
   // 内容变短（比如撤销了一大段粘贴）时不留着空白往上滚。
-  editor.scroll = clamp(editor.scroll, 0, Math.max(0, rows.length - textRows));
+  editor.scroll = clamp(editor.scroll, 0, Math.max(0, rows.length - visible));
 
   const styles = lineStyles(buffer.lines);
-  // AI 在改的那一段，左边画一条竖线。
-  const marked = ['polish', 'ask'].includes(editor.ai?.action) ? editor.ai.paragraph : null;
   const body = [];
   for (let index = 0; index < visible; index += 1) {
     const row = rows[editor.scroll + index];
     if (!row) {
-      body.push(paint([], area));
+      body.push(paint([], width));
       continue;
     }
     const parts = graphemes(buffer.lines[row.line]).slice(row.start, row.end);
-    const gutter =
-      marked && row.line >= marked.start && row.line <= marked.end && margin >= 2
-        ? [[' '.repeat(margin - 2)], ['▎ ', 'accent']]
-        : [[' '.repeat(margin)]];
-    body.push(paint([...gutter, ...group(parts, styles[row.line].slice(row.start, row.end))], area));
+    body.push(paint([[' '.repeat(margin)], ...group(parts, styles[row.line].slice(row.start, row.end))], width));
   }
 
   const cursorScreenRow = top + current - editor.scroll;
   const cursorCol = margin + widthOf(buffer.parts().slice(rows[current].start, buffer.col));
-  if (editor.popup) drawPopup(body, current - editor.scroll, area, margin, visible);
+  if (editor.popup) drawPopup(body, current - editor.scroll, width, margin, visible);
 
   // 顶部：草稿还是已发布、标题（起了才有）、保存状态、字数。
   const doc = editor.doc;
@@ -551,55 +512,28 @@ function renderEditor(width, height) {
   const status = doc.kind === 'draft' ? (dirty ? '保存中' : '已保存') : dirty ? '有修改，还没发布' : `/posts/${doc.id}/`;
   const header = paint(spread(label, [[`${status} · ${wordCount(buffer.text)} 字 `, 'dim']], width), width);
 
-  let screenRows = [header, paint([], width)];
-  if (side) {
-    const aiRows = renderAiPanel(panel, height - 2);
-    screenRows[0] = paint(spread(label, [], area), area) + paint([['│', 'dim']], 1) + aiRows[0];
-    screenRows[1] = paint([], area) + paint([['│', 'dim']], 1) + aiRows[1];
-    body.forEach((row, index) => screenRows.push(row + paint([['│', 'dim']], 1) + aiRows[index + 2]));
-  } else if (editor.ai) {
-    const aiRows = renderAiPanel(width, visible - overlayTop + 1);
-    screenRows.push(...body.slice(0, textRows), paint([['─'.repeat(width), 'dim']], width), aiRows[0], ...aiRows.slice(2));
-  } else {
-    screenRows.push(...body);
-  }
-
-  const bottom = editorBottom(width);
-  screenRows.push(...bottom.rows);
-
-  let cursor = null;
-  if (editor.prompt) cursor = { row: height - 1, col: Math.min(width - 1, 3 + textWidth(editor.prompt.input)) };
-  else if (!editor.ai) cursor = { row: cursorScreenRow, col: Math.min(area - 1, cursorCol) };
-  return { rows: screenRows, cursor };
+  return {
+    rows: [header, paint([], width), ...body, ...editorBottom(width)],
+    cursor: { row: cursorScreenRow, col: Math.min(width - 1, cursorCol) },
+  };
 }
 
-/** 最下面两行：提示和快捷键。打开 AI 输入框时变成输入框。 */
+/** 最下面两行：提示和快捷键。 */
 function editorBottom(width) {
   const editor = state.editor;
   const doc = editor.doc;
-  if (editor.prompt) {
-    const presets = AI_ACTIONS.map((action) => `${action.key} ${action.label}`).join(' · ');
-    return {
-      rows: [
-        paint([[' AI ', 'strong'], [`${presets} · 或者直接写要求，Enter 发送 · Esc 取消`, 'dim']], width),
-        paint([[' › ', 'accent'], [editor.prompt.input]], width),
-      ],
-    };
-  }
-  if (editor.ai) return { rows: [paint(messageSegments() ?? [], width), paint([[` ${aiKeys(editor.ai)}`, 'dim']], width)] };
-
   const hint = messageSegments() ?? (editor.popup
     ? [[' ↑↓ 选文章 · Tab 插入链接 · Esc 关掉', 'dim']]
     : editor.buffer.linkQuery() !== null && !state.docs.posts.length
       ? [[' 还没有发布的文章可以链接。', 'dim']]
       : doc.kind === 'draft' && !editor.buffer.text.trim()
-        ? [[' 直接写正文。标题、导语和主题，发布时再填。', 'dim']]
+        ? [[' 直接写正文。标题、导语和标签，发布时再填。', 'dim']]
         : []);
   const keys =
     doc.kind === 'draft'
-      ? ' Ctrl+P 发布 · Ctrl+K AI 助手 · Ctrl+Z 撤销 · Esc 回到列表'
-      : ' Ctrl+P 更新上线 · Ctrl+K AI 助手 · Ctrl+Z 撤销 · Esc 回到列表';
-  return { rows: [paint(hint, width), paint([[keys, 'dim']], width)] };
+      ? ' Ctrl+P 发布 · Ctrl+Z 撤销 · Esc 回到列表'
+      : ' Ctrl+P 更新上线 · Ctrl+Z 撤销 · Esc 回到列表';
+  return [paint(hint, width), paint([[keys, 'dim']], width)];
 }
 
 /** 每一行每个字的样式：代码是灰的，标题加粗，[[链接]] 和图片用强调色。 */
@@ -679,7 +613,7 @@ function popupKey(key) {
 }
 
 /** 链接提示画在光标下面一行（放不下就画在上面）。 */
-function drawPopup(body, cursorLine, area, margin, visible) {
+function drawPopup(body, cursorLine, width, margin, visible) {
   const { matches, selected } = state.editor.popup;
   const below = cursorLine + 1 + matches.length <= visible;
   const start = below ? cursorLine + 1 : Math.max(0, cursorLine - matches.length);
@@ -687,120 +621,92 @@ function drawPopup(body, cursorLine, area, margin, visible) {
     const active = index === selected;
     body[start + index] = paint(
       [[' '.repeat(margin)], [active ? ' › ' : '   ', 'accent'], [post.title, active ? 'inverse' : 'plain'], [`  ${shortDate(post.date)}`, 'dim']],
-      area,
+      width,
     );
   });
 }
 
-/* ---------- AI 助手 ---------- */
+/* ---------- 发布页：标题、导语、标签、网址 ---------- */
 
-function openPrompt() {
-  if (!aiConfig()) return say(NO_KEY_MESSAGE, 'error', true);
-  state.editor.popup = null;
-  state.editor.prompt = { input: '' };
-}
-
-function promptKey(key) {
-  const prompt = state.editor.prompt;
-  if (key.name === 'escape' || (key.ctrl && key.name === 'c')) {
-    state.editor.prompt = null;
-  } else if (key.name === 'enter') {
-    if (prompt.input.trim()) runAi('ask', prompt.input.trim());
-  } else if (key.name === 'backspace') {
-    prompt.input = graphemes(prompt.input).slice(0, -1).join('');
-  } else if (key.name === 'text' || key.name === 'paste') {
-    const preset = !prompt.input && AI_ACTIONS.find((action) => action.key === key.text);
-    if (preset) runAi(preset.id);
-    else prompt.input += key.text.replace(/\s+/g, ' ');
-  }
-}
-
-async function runAi(action, request = '') {
-  const editor = state.editor;
-  editor.prompt = null;
-  const paragraph = editor.buffer.paragraph();
-  if (action === 'polish' && !paragraph) return say('先把光标放到要润色的那一段里。', 'error');
-
-  const config = aiConfig();
-  const label = action === 'ask' ? request : AI_ACTIONS.find((item) => item.id === action).label;
-  const ai = { action, label, paragraph, model: config.label, text: '', status: 'thinking', error: '', scroll: 0, follow: true, controller: new AbortController() };
-  editor.ai = ai;
-  render();
-  try {
-    const messages = buildMessages(action, { article: aiArticle(editor), paragraph: paragraph?.text, request });
-    for await (const part of streamReply(config, messages, ai.controller.signal)) {
-      if (part.text) {
-        ai.text += part.text;
-        ai.status = 'writing';
-      }
-      requestRender();
-    }
-    if (!ai.text.trim()) throw new Error('AI 没有返回内容，再试一次。');
-    ai.status = 'done';
-    if (action === 'titles') ai.titles = parseTitles(ai.text);
-  } catch (error) {
-    if (ai.controller.signal.aborted) return;
-    ai.status = 'error';
-    ai.error = error.message;
-  }
-  render();
-}
-
-function aiKeys(ai) {
-  if (ai.status === 'thinking' || ai.status === 'writing') return 'Esc 停止';
-  if (ai.status === 'error') return 'Esc 关掉';
-  if (ai.action === 'polish') return 'Enter 替换这一段 · ↑↓ 滚动 · Esc 不用了';
-  if (ai.action === 'titles') return ai.titles?.length ? `1-${ai.titles.length} 用作标题 · Esc 关掉` : 'Esc 关掉';
-  if (ai.action === 'ask') return `Enter 插到${ai.paragraph ? '这一段后面 · r 替换这一段' : '光标处'} · ↑↓ 滚动 · Esc 关掉`;
-  return '↑↓ 滚动 · Esc 关掉';
-}
-
-function aiPanelKey(key) {
-  const editor = state.editor;
-  const ai = editor.ai;
-  const buffer = editor.buffer;
-  const text = ai.text.trim();
-  const close = (message) => {
-    editor.ai = null;
-    if (message) say(message, 'ok');
-    scheduleSave();
+/** 打开发布页。session 是编辑器里的这一篇，或者从列表直接打开的草稿。 */
+function openForm(session) {
+  const fields = readFields(session.head, session.buffer.text);
+  const draft = session.doc.kind === 'draft';
+  const input = (text) => {
+    const buffer = new TextBuffer(text);
+    buffer.setCursor(0, Infinity);
+    return buffer;
   };
-
-  if (key.name === 'escape' || (key.ctrl && key.name === 'c')) {
-    ai.controller.abort();
-    editor.ai = null;
-  } else if (key.name === 'up' || key.name === 'pageup') {
-    ai.follow = false;
-    ai.scroll = Math.max(0, ai.scroll - (key.name === 'up' ? 1 : 10));
-  } else if (key.name === 'down' || key.name === 'pagedown') {
-    ai.scroll += key.name === 'down' ? 1 : 10;
-  } else if (ai.status !== 'done') {
-    // 生成中只能停止或滚动。
-  } else if (ai.action === 'polish' && key.name === 'enter') {
-    buffer.replaceLines(ai.paragraph.start, ai.paragraph.end, text);
-    close('这一段换好了，不满意按 Ctrl+Z 撤回。');
-  } else if (ai.action === 'titles' && key.name === 'text' && ai.titles?.[Number(key.text) - 1]) {
-    const title = ai.titles[Number(key.text) - 1];
-    retitle(editor, title);
-    close(`标题定为「${title}」，发布时还能改。`);
-  } else if (ai.action === 'ask' && key.name === 'enter') {
-    if (ai.paragraph) {
-      buffer.setCursor(ai.paragraph.end, Infinity);
-      buffer.insert(`\n\n${text}`);
-    } else {
-      buffer.insert(text);
-    }
-    close('插进去了，不满意按 Ctrl+Z 撤回。');
-  } else if (ai.action === 'ask' && ai.paragraph && key.name === 'text' && key.text === 'r') {
-    buffer.replaceLines(ai.paragraph.start, ai.paragraph.end, text);
-    close('这一段换好了，不满意按 Ctrl+Z 撤回。');
+  // 能挑的标签：默认的几个、「精选」、发过的文章用过的、这篇已经有的。只差大小写的算一个。
+  const chips = [];
+  for (const tag of [...TAGS, FEATURED, ...state.docs.posts.flatMap((post) => post.tags), ...fields.tags]) {
+    if (!chips.some((chip) => tagSlug(chip) === tagSlug(tag))) chips.push(tag);
   }
+  const form = {
+    session,
+    inputs: {
+      title: input(fields.title),
+      description: input(fields.description),
+      // 已发布的文章不能改网址；发布时间只有草稿里手写过才显示。
+      slug: draft ? input(fields.slug) : null,
+      date: draft && fields.date ? input(fields.date) : null,
+    },
+    tags: [...new Set(fields.tags.map((tag) => chips.find((chip) => tagSlug(chip) === tagSlug(tag))))],
+    chips,
+    // 标签那一行选到第几个；等于 chips.length 时是最后的「＋ 新标签」。
+    chip: 0,
+    // 正在写的新标签（一个输入框），没在写时是 null。
+    newTag: null,
+    focus: 'title',
+    error: '',
+    problems: [],
+  };
+  // 光标停在第一个没填的地方；都填好了就停在「发布」上，按 Enter 就发。
+  form.focus = firstEmpty(form) ?? 'submit';
+  state.form = form;
+  state.view = 'form';
+  clearMessage();
 }
 
-/** 发给 AI 的全文：填过的标题、导语放在正文前面。 */
-function aiArticle(session) {
-  const { title, description } = readFields(session.head);
-  return [title && `标题：${title}`, description && `导语：${description}`, session.buffer.text].filter(Boolean).join('\n\n');
+function focusOrder(form) {
+  return ['title', 'description', 'tags', 'slug', 'date', 'submit'].filter(
+    (name) => name === 'tags' || name === 'submit' || form.inputs[name],
+  );
+}
+
+/** 标题可以不写，但还是先停在那儿；导语不用提醒。 */
+function firstEmpty(form) {
+  if (!form.inputs.title.text.trim()) return 'title';
+  if (!form.tags.length) return 'tags';
+  return null;
+}
+
+/** 检查没过时，光标跳到第一个要改的那一项。 */
+function fieldWithProblem(form, problems) {
+  const text = problems.join('\n');
+  if (/^已经有一篇文章叫/m.test(text)) return 'title';
+  if (/^缺标签/m.test(text)) return 'tags';
+  if (form.inputs.slug && /^网址/m.test(text)) return 'slug';
+  if (form.inputs.date && /^发布时间/m.test(text)) return 'date';
+  return null;
+}
+
+/** 发布页上现在填的值，标签按列出来的顺序排。 */
+function formValues(form) {
+  const text = (name) => form.inputs[name].text.replace(/\s+/g, ' ').trim();
+  return {
+    title: text('title'),
+    description: text('description'),
+    tags: form.chips.filter((chip) => form.tags.includes(chip)),
+    ...(form.inputs.slug && { slug: text('slug') }),
+    ...(form.inputs.date && { date: text('date') }),
+  };
+}
+
+/** 没写标题时会用的标题：日期编号，和发布时算出来的一样。 */
+function formDefaultTitle(form) {
+  const existing = form.session.doc.kind === 'post' ? form.session.doc : null;
+  return defaultTitle({ posts: state.docs.posts, existing });
 }
 
 /**
@@ -819,101 +725,6 @@ function retitle(session, title) {
   session.head = writeFields(session.head, { title });
 }
 
-function renderAiPanel(width, height) {
-  const ai = state.editor.ai;
-  const inner = width - 2;
-  const rows = [paint([[' AI · ', 'strong'], [ai.label, 'strong'], [`  ${ai.model}`, 'dim']], width), paint([], width)];
-
-  let lines;
-  if (ai.status === 'error') lines = wrap(ai.error, inner).map((line) => [[` ${line}`, 'error']]);
-  else if (!ai.text) lines = [[[` ${spinner()} 思考中…`, 'dim']]];
-  else if (ai.action === 'titles' && ai.status === 'done' && ai.titles?.length) {
-    lines = ai.titles.flatMap((title, index) => wrap(`${index + 1}. ${title}`, inner).map((line) => [[` ${line}`]]));
-  } else {
-    lines = wrap(ai.text.trim(), inner).map((line) => [[` ${line}`]]);
-    if (ai.status === 'writing') lines.push([[` ${spinner()}`, 'accent']]);
-  }
-
-  const visible = height - 2;
-  const maxScroll = Math.max(0, lines.length - visible);
-  ai.scroll = ai.follow ? maxScroll : clamp(ai.scroll, 0, maxScroll);
-  // 往上翻过之后再翻回底部，继续跟着新出来的字走。
-  if (ai.scroll === maxScroll) ai.follow = true;
-  for (const line of lines.slice(ai.scroll, ai.scroll + visible)) rows.push(paint(line, width));
-  while (rows.length < height) rows.push(paint([], width));
-  return rows;
-}
-
-/* ---------- 发布页：标题、导语、主题、网址 ---------- */
-
-/** 打开发布页。session 是编辑器里的这一篇，或者从列表直接打开的草稿。 */
-function openForm(session) {
-  const fields = readFields(session.head, session.buffer.text);
-  const draft = session.doc.kind === 'draft';
-  const input = (text) => {
-    const buffer = new TextBuffer(text);
-    buffer.setCursor(0, Infinity);
-    return buffer;
-  };
-  const form = {
-    session,
-    inputs: {
-      title: input(fields.title),
-      description: input(fields.description),
-      // 已发布的文章不能改网址；发布时间只有草稿里手写过才显示。
-      slug: draft ? input(fields.slug) : null,
-      date: draft && fields.date ? input(fields.date) : null,
-    },
-    tags: fields.tags,
-    chips: [...CHIPS, ...fields.tags.filter((tag) => !CHIPS.includes(tag))],
-    chip: 0,
-    focus: 'title',
-    error: '',
-    problems: [],
-  };
-  // 光标停在第一个没填的地方；都填好了就停在「发布」上，按 Enter 就发。
-  form.focus = firstEmpty(form) ?? 'submit';
-  state.form = form;
-  state.view = 'form';
-  clearMessage();
-}
-
-function focusOrder(form) {
-  return ['title', 'description', 'tags', 'slug', 'date', 'submit'].filter(
-    (name) => name === 'tags' || name === 'submit' || form.inputs[name],
-  );
-}
-
-function firstEmpty(form) {
-  if (!form.inputs.title.text.trim()) return 'title';
-  if (!form.inputs.description.text.trim()) return 'description';
-  if (!form.tags.length) return 'tags';
-  return null;
-}
-
-/** 检查没过时，光标跳到第一个要改的那一项。 */
-function fieldWithProblem(form, problems) {
-  const text = problems.join('\n');
-  if (/^(?:缺标题|已经有一篇文章叫)/m.test(text)) return 'title';
-  if (/^缺导语/m.test(text)) return 'description';
-  if (/^缺主题/m.test(text)) return 'tags';
-  if (form.inputs.slug && /^网址/m.test(text)) return 'slug';
-  if (form.inputs.date && /^发布时间/m.test(text)) return 'date';
-  return null;
-}
-
-/** 发布页上现在填的值，主题按固定的顺序排。 */
-function formValues(form) {
-  const text = (name) => form.inputs[name].text.replace(/\s+/g, ' ').trim();
-  return {
-    title: text('title'),
-    description: text('description'),
-    tags: form.chips.filter((chip) => form.tags.includes(chip)),
-    ...(form.inputs.slug && { slug: text('slug') }),
-    ...(form.inputs.date && { date: text('date') }),
-  };
-}
-
 /** 把填的写回这一篇（草稿随后存进文件）。 */
 function applyForm(form) {
   const values = formValues(form);
@@ -923,7 +734,9 @@ function applyForm(form) {
 
 async function formKey(key) {
   const form = state.form;
-  const { name, ctrl, alt } = key;
+  const { name, ctrl } = key;
+  // 正在写新标签时，按键先给它的输入框。
+  if (form.newTag && newTagKey(form, key)) return;
   if (name === 'escape' || (ctrl && name === 'c')) return leaveForm();
   if (ctrl && name === 'p') return submitForm();
 
@@ -933,11 +746,18 @@ async function formKey(key) {
   };
   if (name === 'up' || name === 'backtab') return step(-1);
   if (name === 'down' || name === 'tab') return step(1);
-  if (name === 'enter') return form.focus === 'submit' ? submitForm() : step(1);
+  if (name === 'enter') {
+    if (form.focus === 'submit') return submitForm();
+    if (form.focus === 'tags' && form.chip === form.chips.length) return openNewTag(form);
+    return step(1);
+  }
   if (form.focus === 'tags') return tagKey(form, key);
+  if (form.inputs[form.focus]) editInput(form.inputs[form.focus], key);
+}
 
-  const input = form.inputs[form.focus];
-  if (!input) return;
+/** 输入框里的编辑键：打字、删除、按字或按词移动、撤销。粘贴进来的换行变成空格。 */
+function editInput(input, key) {
+  const { name, ctrl, alt } = key;
   if (name === 'text' || name === 'paste') input.insert(key.text.replace(/\s*\n\s*/g, ' '));
   else if (name === 'backspace') alt || ctrl ? input.deleteWordBackward() : input.backspace();
   else if (name === 'delete') input.deleteForward();
@@ -950,17 +770,19 @@ async function formKey(key) {
   else if (ctrl && name === 'y') input.redo();
 }
 
-/** 主题：←→ 挑，空格选中或取消，数字键直接选第几个。 */
+/** 标签：←→ 挑，空格选中或取消，数字键直接选第几个；打别的字就是新建一个标签。 */
 function tagKey(form, key) {
-  const count = form.chips.length;
+  const count = form.chips.length + 1;
   if (key.name === 'left') form.chip = (form.chip + count - 1) % count;
   else if (key.name === 'right') form.chip = (form.chip + 1) % count;
-  else if (key.name === 'text') {
+  else if (key.name === 'text' || key.name === 'paste') {
     // 输入法打出的全角空格、全角数字也算。
-    for (const char of key.text.normalize('NFKC')) {
+    const text = key.text.normalize('NFKC');
+    if (!/^[\s\d]*$/.test(text)) return openNewTag(form, key.text);
+    for (const char of text) {
       const number = Number(char);
-      if (char === ' ') toggleTag(form, form.chip);
-      else if (number >= 1 && number <= count) toggleTag(form, (form.chip = number - 1));
+      if (char === ' ') form.chip === form.chips.length ? openNewTag(form) : toggleTag(form, form.chip);
+      else if (number >= 1 && number <= form.chips.length) toggleTag(form, (form.chip = number - 1));
     }
   }
 }
@@ -968,6 +790,41 @@ function tagKey(form, key) {
 function toggleTag(form, index) {
   const chip = form.chips[index];
   form.tags = form.tags.includes(chip) ? form.tags.filter((tag) => tag !== chip) : [...form.tags, chip];
+}
+
+/** 开始写一个新标签：标签那一行的最后变成输入框。 */
+function openNewTag(form, text = '') {
+  form.chip = form.chips.length;
+  form.newTag = new TextBuffer('');
+  if (text) form.newTag.insert(text.replace(/\s*\n\s*/g, ' '));
+}
+
+/** 写新标签时的按键，处理掉了返回 true。↑↓、Tab、Ctrl+P 先把写好的加上，再照常换一项或发布。 */
+function newTagKey(form, key) {
+  const { name, ctrl } = key;
+  if (name === 'escape' || (ctrl && name === 'c')) {
+    form.newTag = null;
+  } else if (name === 'enter') {
+    addNewTag(form);
+  } else if (['up', 'down', 'tab', 'backtab'].includes(name) || (ctrl && name === 'p')) {
+    addNewTag(form);
+    return false;
+  } else {
+    editInput(form.newTag, key);
+  }
+  return true;
+}
+
+/** 把写好的新标签加进来并选中；和已有的只差大小写、空格时，用已有的那个。 */
+function addNewTag(form) {
+  // 逗号、顿号会把一个标签拆成两个，换成空格。
+  const name = form.newTag.text.replace(/[,，、]/g, ' ').replace(/\s+/g, ' ').trim();
+  form.newTag = null;
+  if (!name) return;
+  let index = form.chips.findIndex((chip) => tagSlug(chip) === tagSlug(name));
+  if (index < 0) index = form.chips.push(name) - 1;
+  if (!form.tags.includes(form.chips[index])) form.tags = [...form.tags, form.chips[index]];
+  form.chip = index;
 }
 
 /** Esc：填了的都留着（草稿存进文件），回到编辑器或列表。 */
@@ -989,8 +846,9 @@ async function submitForm() {
   await saveDraft(session);
   const existing = session.doc.kind === 'post' ? session.doc : null;
   const text = documentText(session);
+  let post;
   try {
-    preparePost(text, { posts: state.docs.posts, existing });
+    post = preparePost(text, { posts: state.docs.posts, existing });
   } catch (error) {
     if (!(error instanceof BlogError)) throw error;
     form.error = error.message;
@@ -1007,7 +865,7 @@ async function submitForm() {
     done: [],
     problems: [],
     error: '',
-    title: readFields(session.head, session.buffer.text).title,
+    title: post.title,
     result: null,
   };
   state.view = 'publish';
@@ -1018,8 +876,9 @@ function renderForm(width, height) {
   const form = state.form;
   const draft = form.session.doc.kind === 'draft';
   const verb = draft ? '发布' : '更新上线';
+  const fallback = formDefaultTitle(form);
   const rows = [
-    paint([[draft ? ' 发布新文章' : ` 更新「${formValues(form).title || '未命名'}」`, 'strong']], width),
+    paint([[draft ? ' 发布新文章' : ` 更新「${formValues(form).title || fallback}」`, 'strong']], width),
     paint([], width),
   ];
   const columns = Math.max(10, Math.min(72, width - LABEL_WIDTH - 1));
@@ -1050,29 +909,39 @@ function renderForm(width, height) {
     }
   };
 
-  addInput('title');
+  addInput('title', `留空就用 ${fallback}`);
   addInput('description');
 
-  // 主题一个个排开，放不下就换行。
+  // 标签一个个排开，放不下就换行；最后是「＋ 新标签」，写新标签时变成输入框。
   let segments = label('tags');
   let used = LABEL_WIDTH;
-  form.chips.forEach((chip, index) => {
-    const on = form.tags.includes(chip);
-    const text = `${on ? '●' : '○'} ${chip}`;
+  const place = (text, style) => {
     const size = textWidth(text) + 3;
     if (used + size > width && used > LABEL_WIDTH) {
       rows.push(paint(segments, width));
       segments = [...indent];
       used = LABEL_WIDTH;
     }
-    const style = form.focus === 'tags' && index === form.chip ? 'inverse' : on ? 'accent' : 'dim';
     segments.push([text, style], ['   ']);
     used += size;
+    return used - size;
+  };
+  const picking = (index) => form.focus === 'tags' && !form.newTag && index === form.chip;
+  form.chips.forEach((chip, index) => {
+    const on = form.tags.includes(chip);
+    place(`${on ? '●' : '○'} ${chip}`, picking(index) ? 'inverse' : on ? 'accent' : 'dim');
   });
+  if (form.newTag) {
+    const input = form.newTag;
+    const at = place(`＋ ${input.text || '写个名字'}`, input.text ? 'plain' : 'dim');
+    cursor = { row: rows.length, col: at + textWidth('＋ ') + widthOf(input.parts().slice(0, input.col)) };
+  } else {
+    place('＋ 新标签', picking(form.chips.length) ? 'inverse' : 'dim');
+  }
   rows.push(paint(segments, width));
 
   if (draft) {
-    addInput('slug', `留空就用 /posts/${nextPostId(zonedTime().day, state.docs.posts)}/`);
+    addInput('slug', `留空就用 /posts/${fallback}/`);
     addInput('date');
   } else {
     rows.push(paint([...label('slug'), [`/posts/${form.session.doc.id}/`], ['  已发布，不能改', 'dim']], width));
@@ -1092,11 +961,13 @@ function renderForm(width, height) {
   while (rows.length < height - 2) rows.push(paint([], width));
   rows.length = height - 2;
   const back = state.editor === form.session ? 'Esc 回去写正文' : 'Esc 回到列表';
-  const keys =
-    form.focus === 'submit'
+  const hint = form.newTag ? '新标签的名字。加过一次，以后发文章时都能直接挑。' : FORM_FIELDS[form.focus].hint;
+  const keys = form.newTag
+    ? ' Enter 加上 · Esc 不加了'
+    : form.focus === 'submit'
       ? ` Enter ${verb} · ↑ 回去改 · ${back}`
       : ` ↑↓ 换一项 · Enter 下一项 · Ctrl+P ${verb} · ${back}`;
-  rows.push(paint(messageSegments() ?? [[` ${FORM_FIELDS[form.focus].hint}`, 'dim']], width));
+  rows.push(paint(messageSegments() ?? [[` ${hint}`, 'dim']], width));
   rows.push(paint([[keys, 'dim']], width));
   if (cursor && cursor.row >= height - 2) cursor = null;
   return { rows, cursor };

@@ -1,0 +1,13 @@
+---
+import PageHeading from '../../components/PageHeading.astro';
+import TagList from '../../components/TagList.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getPublishedPosts, getTags } from '../../utils/posts';
+
+const tags = getTags(await getPublishedPosts());
+---
+
+<BaseLayout title="标签" description="按标签浏览文章。">
+  <PageHeading title="标签" />
+  {tags.length ? <TagList tags={tags} showCount /> : <p class="empty-state">还没有标签。</p>}
+</BaseLayout>

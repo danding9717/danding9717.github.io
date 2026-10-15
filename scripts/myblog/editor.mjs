@@ -228,17 +228,7 @@ export class TextBuffer {
     this.goal = x;
   }
 
-  /* ---------- Markdown ---------- */
-
-  /** 光标所在的段落（连续的非空行），在空行上返回 null。 */
-  paragraph() {
-    if (!this.lines[this.line].trim()) return null;
-    let start = this.line;
-    let end = this.line;
-    while (start > 0 && this.lines[start - 1].trim()) start -= 1;
-    while (end < this.lines.length - 1 && this.lines[end + 1].trim()) end += 1;
-    return { start, end, text: this.lines.slice(start, end + 1).join('\n') };
-  }
+  /* ---------- [[ 链接 ---------- */
 
   /** 光标前是 [[ 加几个字时，返回这几个字（用来提示文章标题）。 */
   linkQuery() {

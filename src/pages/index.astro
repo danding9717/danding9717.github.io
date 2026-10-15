@@ -1,21 +1,24 @@
 ---
 import PostRow from '../components/PostRow.astro';
-import TopicList from '../components/TopicList.astro';
+import TagList from '../components/TagList.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { SITE_DESCRIPTION, SITE_INTRO, SITE_TITLE } from '../consts';
 import {
   formatDate,
+  getExcerpt,
   getFeaturedPosts,
   getPostUrl,
   getPublishedPosts,
   getReadingMinutes,
-  getTopics,
+  getTags,
 } from '../utils/posts';
 
 const posts = await getPublishedPosts();
 const [latest] = posts;
+// 没写导语时用正文第一段。
+const summary = latest && (latest.data.description || getExcerpt(latest));
 const featured = getFeaturedPosts(posts);
-const topics = getTopics(posts);
+const tags = getTags(posts);
 ---
 
 <BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
@@ -29,7 +32,7 @@ const topics = getTopics(posts);
           <a class="featured-post" href={getPostUrl(latest)}>
             <h3 class="featured-title">{latest.data.title}</h3>
             <p class="featured-lede">
-              {latest.data.description && <span class="featured-desc">{latest.data.description}</span>}
+              {summary && <span class="featured-desc">{summary}</span>}
               <span class="featured-more">继续阅读<span aria-hidden="true">&nbsp;&rsaquo;</span></span>
             </p>
             <p class="post-info">
@@ -51,10 +54,10 @@ const topics = getTopics(posts);
           </section>
         )}
 
-        {topics.length > 0 && (
-          <section class="home-section" aria-labelledby="home-topics">
-            <h2 class="section-title" id="home-topics">主题</h2>
-            <TopicList topics={topics} />
+        {tags.length > 0 && (
+          <section class="home-section" aria-labelledby="home-tags">
+            <h2 class="section-title" id="home-tags">标签</h2>
+            <TagList tags={tags} />
           </section>
         )}
       </>

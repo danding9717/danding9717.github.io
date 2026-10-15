@@ -92,7 +92,7 @@ function isLatin(grapheme) {
   return /^[\p{L}\p{N}'’_.-]$/u.test(grapheme) && charWidth(grapheme) === 1;
 }
 
-/** 普通文字按宽度折行，用在 AI 面板和提示里。 */
+/** 普通文字按宽度折行，用在发布页和发布进度的提示里。 */
 export function wrap(text, width) {
   return String(text)
     .split('\n')

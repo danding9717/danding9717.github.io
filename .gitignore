@@ -4,7 +4,6 @@ dist/
 .DS_Store
 .env
 .env.*
-!.env.example
 
 # 草稿只存在本机，不进 git。
 src/content/drafts/
