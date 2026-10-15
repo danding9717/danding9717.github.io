@@ -2,12 +2,13 @@
 import { render } from 'astro:content';
 import Comments from '../../components/Comments.astro';
 import PostRow from '../../components/PostRow.astro';
-import TopicList from '../../components/TopicList.astro';
+import TagList from '../../components/TagList.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import {
   descriptionRepeatsBody,
   formatDate,
   getBacklinks,
+  getExcerpt,
   getPostUrl,
   getPublishedPosts,
   getReadingMinutes,
@@ -41,12 +42,12 @@ const { Content, headings } = await render(post);
 const sections = headings.filter((heading) => heading.depth === 2);
 const showToc = sections.length >= 4;
 const showSubtitle = !descriptionRepeatsBody(post);
-const topics = [...new Set(post.data.tags)];
+const tags = [...new Set(post.data.tags)];
 ---
 
 <BaseLayout
   title={post.data.title}
-  description={post.data.description}
+  description={post.data.description || getExcerpt(post)}
   type="article"
   publishedTime={post.data.date}
 >
@@ -112,7 +113,7 @@ const topics = [...new Set(post.data.tags)];
       )
     }
 
-    {topics.length > 0 && <TopicList topics={topics} label="主题：" />}
+    {tags.length > 0 && <TagList tags={tags} label="标签：" />}
 
     <Comments term={post.id} />
   </footer>

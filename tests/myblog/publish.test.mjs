@@ -126,7 +126,7 @@ test('连发 3 篇：每篇都推送到 GitHub，草稿删掉，链接和顺序�
   assert.equal(await unpushedCount(blog.root), 0);
 });
 
-test('只写了正文的草稿：发布页填的标题、导语、主题写进去就能发布', async () => {
+test('只写了正文的草稿：发布页填的标题、导语、标签写进去就能发布', async () => {
   const blog = await makeBlog();
   const file = await createDraft(blog.root, NOW);
   assert.equal(await readFile(file, 'utf8'), '', '新草稿是空文件');
@@ -147,6 +147,21 @@ test('只写了正文的草稿：发布页填的标题、导语、主题写进�
   assert.equal(existsSync(file), false);
 });
 
+test('标题、导语都不写：标题用日期编号，同一天第二篇是 -2', async () => {
+  const blog = await makeBlog();
+  for (let index = 0; index < 2; index += 1) {
+    const now = new Date(NOW.getTime() + index * 60_000);
+    const doc = await writeDraft(blog.root, `---\ntags: ["读书"]\n---\n\n第 ${index + 1} 篇的正文。\n`, now);
+    const result = await publish(doc, { root: blog.root, now, build: okBuild });
+    assert.equal(result.title, index ? '20261014-2' : '20261014');
+  }
+  assert.equal(
+    await readFile(path.join(blog.root, 'src/content/posts/20261014-2.md'), 'utf8'),
+    '---\ntitle: "20261014-2"\ndate: 2026-10-14T21:31:00+08:00\ntags: ["读书"]\n---\n\n第 2 篇的正文。\n',
+  );
+  assert.equal(git(blog.remote, 'log', '--format=%s', 'main'), ['发布：20261014-2', '发布：20261014', 'init'].join('\n'));
+});
+
 test('缺东西时一条条列出来，不同步、不构建、不提交', async () => {
   const blog = await makeBlog();
   const doc = await writeDraft(blog.root, '---\ntitle: 只有标题\ndescription: \ntags: \n---\n\n看 [[不存在的文章]]\n');
@@ -157,10 +172,9 @@ test('缺东西时一条条列出来，不同步、不构建、不提交', async
     (error) => {
       assert.ok(error instanceof BlogError);
       assert.equal(error.message, '还不能发布：');
-      assert.equal(error.problems.length, 3);
-      assert.match(error.problems[0], /^缺导语/);
-      assert.match(error.problems[1], /^缺主题/);
-      assert.match(error.problems[2], /\[\[不存在的文章\]\] 找不到/);
+      assert.equal(error.problems.length, 2);
+      assert.match(error.problems[0], /^缺标签/);
+      assert.match(error.problems[1], /\[\[不存在的文章\]\] 找不到/);
       return true;
     },
   );

@@ -8,8 +8,9 @@ import { fileURLToPath } from 'node:url';
 import { SITE_URL } from '../../site.config.mjs';
 
 export const ROOT = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-export const TOPICS = ['AI', '财富', '生意', '读书', '产品'];
-/** 挂上这个主题的文章会出现在首页「精选」里（和 src/utils/posts.ts 的 FEATURED_TOPIC 一致）。 */
+/** 发布页上默认列出的标签；别的标签在发布页上直接新建，用过的以后也会列出来。 */
+export const TAGS = ['AI', '财富', '生意', '读书', '产品'];
+/** 挂上这个标签的文章会出现在首页「精选」里（和 src/utils/posts.ts 的 FEATURED_TAG 一致）。 */
 export const FEATURED = '精选';
 const TIME_ZONE = 'Asia/Shanghai';
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -95,13 +96,18 @@ export function unquote(value) {
   return text;
 }
 
-/** 主题支持 `[AI, 财富]`、`AI, 财富`、`AI，财富`、`AI、财富` 和一行一个的写法。 */
+/** 标签支持 `[AI, 财富]`、`AI, 财富`、`AI，财富`、`AI、财富` 和一行一个的写法。 */
 export function parseTags(value) {
   if (!value) return [];
   const items = Array.isArray(value)
     ? value
     : (String(value).trim().match(/^\[([\s\S]*)\]$/)?.[1] ?? String(value)).split(/[,，、]/);
   return [...new Set(items.map(unquote).filter(Boolean))];
+}
+
+/** 标签在网站上的地址名（和 src/utils/posts.ts 的 toSlug 一致）。只差大小写、空格的算同一个标签。 */
+export function tagSlug(name) {
+  return String(name).trim().toLowerCase().replace(/[\s/?#%]+/g, '-');
 }
 
 /** 正文第一行是「# 标题」时返回标题。 */
@@ -232,7 +238,7 @@ async function loadDocs(directory, kind) {
   );
 }
 
-/** 新草稿是个空文件：打开就写正文，标题、导语和主题发布时再填。 */
+/** 新草稿是个空文件：打开就写正文，标题、导语和标签发布时再填。 */
 export async function createDraft(root = ROOT, now = new Date()) {
   const { drafts } = blogPaths(root);
   await mkdir(drafts, { recursive: true });
@@ -317,12 +323,12 @@ export function preparePost(text, { posts, existing = null, now = new Date() }) 
   const date = typedDate ? normalizeDate(typedDate) : existing?.date || zonedTime(now).iso;
   const others = posts.filter((post) => post.file !== existing?.file);
 
-  if (!title) problems.push('缺标题：一句话说出这篇的观点。');
-  if (!description) problems.push('缺导语：一句话，显示在标题下面，也是首页和 RSS 的摘要。');
-  if (!tags.length) problems.push(`缺主题：至少选一个，比如 ${TOPICS.join('、')}。`);
+  // 标题和导语可以不写：没有标题时用日期编号，比如 20261015，同一天第二篇是 20261015-2。
+  if (!title) title = defaultTitle({ posts, existing, now });
+  if (!tags.length) problems.push(`缺标签：至少选一个，比如 ${TAGS.join('、')}。`);
   if (!content.trim()) problems.push('正文还是空的。');
   if (!date) problems.push(`发布时间的格式不对：「${typedDate}」。写成 2026-10-14 或 2026-10-14 21:30，或者删掉，发布时会自动写上。`);
-  if (title && others.some((post) => sameText(post.title, title))) {
+  if (others.some((post) => sameText(post.title, title))) {
     problems.push(`已经有一篇文章叫「${title}」，换个标题，不然 [[ ]] 链接分不清是哪篇。`);
   }
 
@@ -334,7 +340,7 @@ export function preparePost(text, { posts, existing = null, now = new Date() }) 
     else if (isTaken(slug, posts)) problems.push(`网址「${slug}」已经被别的文章用了，换一个。`);
     id = slug;
   } else {
-    id = nextPostId(zonedTime(now).day, posts);
+    id = dateName(zonedTime(now).day, posts);
   }
 
   const linked = rewriteLinks(content, posts);
@@ -363,10 +369,21 @@ export function normalizeDate(value) {
   return Number.isNaN(Date.parse(date)) ? null : date;
 }
 
-/** 没写 slug 时用日期当地址，同一天第二篇起加 -2、-3。 */
-export function nextPostId(day, posts) {
-  if (!isTaken(day, posts)) return day;
-  for (let n = 2; ; n += 1) if (!isTaken(`${day}-${n}`, posts)) return `${day}-${n}`;
+/**
+ * 日期编号：20261015，同一天第二篇起是 20261015-2、20261015-3。
+ * 没写网址时用作文章地址，没写标题时用作标题；跳过别的文章已经用掉的地址和标题，所以两者对得上。
+ */
+export function dateName(day, posts) {
+  const used = (name) => isTaken(name, posts) || posts.some((post) => sameText(post.title, name));
+  if (!used(day)) return day;
+  for (let n = 2; ; n += 1) if (!used(`${day}-${n}`)) return `${day}-${n}`;
+}
+
+/** 没写标题时用的标题：新文章按发布那天编号，改已发布的文章按它原来的发布日期。 */
+export function defaultTitle({ posts, existing = null, now = new Date() }) {
+  const others = posts.filter((post) => post.file !== existing?.file);
+  const published = existing && Date.parse(existing.date);
+  return dateName(zonedTime(published ? new Date(published) : now).day, others);
 }
 
 function isTaken(id, posts) {
@@ -378,7 +395,7 @@ export function formatPost({ title, date, description, tags, slug }, body) {
     '---',
     `title: ${JSON.stringify(title)}`,
     `date: ${date}`,
-    `description: ${JSON.stringify(description)}`,
+    ...(description ? [`description: ${JSON.stringify(description)}`] : []),
     `tags: [${tags.map((tag) => JSON.stringify(tag)).join(', ')}]`,
     ...(slug ? [`slug: ${JSON.stringify(slug)}`] : []),
     '---',
@@ -607,7 +624,7 @@ export function droppedImagePath(text) {
 
 export const PUBLISH_STEPS = [
   ['sync', '同步 GitHub'],
-  ['check', '检查标题、导语、主题、链接和图片'],
+  ['check', '检查标签、链接和图片'],
   ['build', '构建网站'],
   ['push', '提交并推送到 GitHub'],
 ];

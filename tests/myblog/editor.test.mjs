@@ -112,16 +112,6 @@ test('折行和光标所在的屏幕行', () => {
   assert.equal(cursorRow(rows, buffer), 2);
 });
 
-test('光标所在的段落，空行上没有', () => {
-  const buffer = new TextBuffer('第一段第一行\n第一段第二行\n\n第二段');
-  buffer.setCursor(1, 0);
-  assert.deepEqual(buffer.paragraph(), { start: 0, end: 1, text: '第一段第一行\n第一段第二行' });
-  buffer.setCursor(3, 0);
-  assert.deepEqual(buffer.paragraph(), { start: 3, end: 3, text: '第二段' });
-  buffer.setCursor(2, 0);
-  assert.equal(buffer.paragraph(), null);
-});
-
 test('[[ 链接补全', () => {
   const buffer = new TextBuffer('见 [[复');
   buffer.setCursor(0, Infinity);

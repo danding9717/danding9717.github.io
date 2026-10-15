@@ -11,9 +11,11 @@ export default defineConfig({
   // 两篇文章用了同一个 slug、或两个页面生成同一个网址时，直接让构建失败。
   prerenderConflictBehavior: 'error',
   integrations: [mdx(), sitemap()],
-  // 搜索并入归档页。
   redirects: {
+    // 搜索并入归档页。
     '/search': '/archive/',
+    // 「主题」改名「标签」之前的地址。
+    '/topics': '/tags/',
   },
   markdown: {
     processor: satteri({

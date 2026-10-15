@@ -6,6 +6,8 @@ import { after, test } from 'node:test';
 import {
   BlogError,
   buildErrors,
+  dateName,
+  defaultTitle,
   describe,
   droppedImagePath,
   formatPost,
@@ -13,7 +15,6 @@ import {
   isBlankDraft,
   joinDocument,
   mapProse,
-  nextPostId,
   normalizeDate,
   parseTags,
   planImages,
@@ -22,6 +23,7 @@ import {
   rewriteLinks,
   splitDocument,
   splitFrontmatter,
+  tagSlug,
   unquote,
   writeFields,
   zonedTime,
@@ -130,7 +132,7 @@ test('发布页填的写回 frontmatter：改原来那项，加没有的，删�
   assert.deepEqual(readFields(writeFields('', fields)), fields);
 });
 
-test('引号、主题的各种写法', () => {
+test('引号、标签的各种写法', () => {
   assert.equal(unquote('"他说\\"好\\""'), '他说"好"');
   assert.equal(unquote("'it''s'"), "it's");
   assert.equal(unquote('  不带引号  '), '不带引号');
@@ -140,6 +142,11 @@ test('引号、主题的各种写法', () => {
     assert.deepEqual(parseTags(value), ['AI', '财富'], String(value));
   }
   assert.deepEqual(parseTags(''), []);
+
+  // 和网站上标签的地址一致：只差大小写、空格的是同一个标签。
+  assert.equal(tagSlug(' Daily Notes '), 'daily-notes');
+  assert.equal(tagSlug('AI'), tagSlug('ai'));
+  assert.equal(tagSlug('读书'), '读书');
 });
 
 test('正文第一行的「# 标题」', () => {
@@ -178,9 +185,20 @@ test('按北京时间取日期，跨过零点也对', () => {
   assert.equal(zonedTime(new Date('2026-10-14T16:30:00Z')).day, '20261015');
 });
 
-test('同一天第二篇起加 -2、-3', () => {
-  assert.equal(nextPostId('20261014', []), '20261014');
-  assert.equal(nextPostId('20261014', [post('20261014', 'a'), post('20261014-2', 'b')]), '20261014-3');
+test('日期编号：同一天第二篇起加 -2、-3，别的文章用掉的地址和标题都跳过', () => {
+  assert.equal(dateName('20261014', []), '20261014');
+  assert.equal(dateName('20261014', [post('20261014', 'a'), post('20261014-2', 'b')]), '20261014-3');
+  // 有一篇用了自己的网址、标题是日期编号：下一篇的地址和标题都往后排，两者对得上。
+  assert.equal(dateName('20261014', [post('compound', '20261014')]), '20261014-2');
+});
+
+test('没写标题时的标题：新文章按今天编号，改已发布的文章按它的发布日期', () => {
+  const posts = [post('20261014', '复利'), post('20261001', '20261001', { date: '2026-10-01T10:00:00+08:00' })];
+  assert.equal(defaultTitle({ posts, now: NOW }), '20261014-2');
+  assert.equal(defaultTitle({ posts: [], now: NOW }), '20261014');
+  // 改的就是那篇自己，不算撞了。
+  assert.equal(defaultTitle({ posts, existing: posts[1], now: NOW }), '20261001');
+  assert.equal(defaultTitle({ posts, existing: posts[0], now: NOW }), '20261001-2');
 });
 
 test('手写的日期整理成网站认的格式', () => {
@@ -206,11 +224,27 @@ test('整理一篇能发布的草稿', () => {
 
 test('缺的东西一次全部列出来', () => {
   const problems = problemsOf(() => preparePost(draft({ title: '', description: '', tags: '' }, ''), { posts: [], now: NOW }));
-  assert.equal(problems.length, 4);
-  assert.match(problems[0], /^缺标题/);
-  assert.match(problems[1], /^缺导语/);
-  assert.match(problems[2], /^缺主题/);
-  assert.match(problems[3], /正文还是空的/);
+  assert.equal(problems.length, 2);
+  assert.match(problems[0], /^缺标签/);
+  assert.match(problems[1], /正文还是空的/);
+});
+
+test('标题、导语都可以不写：标题用日期编号，和网址一样', () => {
+  const untitled = draft({ tags: 'AI' }, '只写了正文。');
+  const first = preparePost(untitled, { posts: [], now: NOW });
+  assert.equal(first.title, '20261014');
+  assert.equal(first.id, '20261014');
+  assert.equal(first.description, '');
+
+  // 同一天第二篇。前一篇起了标题也一样，编号跟着网址走。
+  const second = preparePost(untitled, { posts: [post('20261014', '复利')], now: NOW });
+  assert.equal(second.title, '20261014-2');
+  assert.equal(second.id, '20261014-2');
+
+  // 写了网址没写标题：标题还是日期编号。
+  const named = preparePost(draft({ tags: 'AI', slug: 'compound' }, '正文。'), { posts: [], now: NOW });
+  assert.equal(named.title, '20261014');
+  assert.equal(named.id, 'compound');
 });
 
 test('没写 title 时用正文第一行的「# 标题」，并从正文里去掉', () => {
@@ -310,6 +344,11 @@ test('写出的 frontmatter 读回来一样', () => {
   assert.equal(doc.date, '2026-10-14T21:30:00+08:00');
 
   assert.match(formatPost({ title: 't', date: 'd', description: 'd', tags: ['AI'], slug: 'old-name' }, 'x'), /\nslug: "old-name"\n/);
+  // 没写导语就不写这一行。
+  assert.equal(
+    formatPost({ title: '20261014', date: '2026-10-14T21:30:00+08:00', description: '', tags: ['AI'], slug: '' }, '正文'),
+    '---\ntitle: "20261014"\ndate: 2026-10-14T21:30:00+08:00\ntags: ["AI"]\n---\n\n正文\n',
+  );
 });
 
 test('只改正文，跳过代码块和行内代码', () => {

@@ -3,14 +3,14 @@ import { withBase } from './paths';
 
 export type Post = CollectionEntry<'posts'>;
 
-export interface Topic {
+export interface Tag {
   name: string;
   slug: string;
   posts: Post[];
 }
 
-/** 挂上这个主题的文章会出现在首页「精选」里。 */
-export const FEATURED_TOPIC = '精选';
+/** 挂上这个标签的文章会出现在首页「精选」里。 */
+export const FEATURED_TAG = '精选';
 const FEATURED_MIN = 3;
 const FEATURED_MAX = 5;
 
@@ -54,26 +54,26 @@ export function toSlug(name: string) {
   return name.trim().toLowerCase().replace(/[\s/?#%]+/g, '-');
 }
 
-export function getTopicUrl(name: string) {
-  return withBase(`/topics/${toSlug(name)}/`);
+export function getTagUrl(name: string) {
+  return withBase(`/tags/${toSlug(name)}/`);
 }
 
 /** 按篇数从多到少排列，「精选」固定放在最后。 */
-export function getTopics(posts: Post[]) {
-  const topics = new Map<string, Topic>();
+export function getTags(posts: Post[]) {
+  const tags = new Map<string, Tag>();
 
   for (const post of posts) {
     for (const name of new Set(post.data.tags)) {
       const slug = toSlug(name);
       if (!slug) continue;
-      const topic = topics.get(slug) ?? { name, slug, posts: [] };
-      topic.posts.push(post);
-      topics.set(slug, topic);
+      const tag = tags.get(slug) ?? { name, slug, posts: [] };
+      tag.posts.push(post);
+      tags.set(slug, tag);
     }
   }
 
-  const isFeatured = (topic: Topic) => topic.name === FEATURED_TOPIC;
-  return [...topics.values()].sort(
+  const isFeatured = (tag: Tag) => tag.name === FEATURED_TAG;
+  return [...tags.values()].sort(
     (a, b) =>
       Number(isFeatured(a)) - Number(isFeatured(b)) ||
       b.posts.length - a.posts.length ||
@@ -81,9 +81,9 @@ export function getTopics(posts: Post[]) {
   );
 }
 
-/** 带「精选」主题的文章达到 3 篇才显示，最多 5 篇。 */
+/** 带「精选」标签的文章达到 3 篇才显示，最多 5 篇。 */
 export function getFeaturedPosts(posts: Post[]) {
-  const featured = posts.filter((post) => post.data.tags.includes(FEATURED_TOPIC));
+  const featured = posts.filter((post) => post.data.tags.includes(FEATURED_TAG));
   return featured.length >= FEATURED_MIN ? featured.slice(0, FEATURED_MAX) : [];
 }
 
@@ -96,17 +96,17 @@ export function getReadingMinutes(post: Post) {
 }
 
 /**
- * 只按共同主题打分（「精选」不算），同分时新的在前。
+ * 只按共同标签打分（「精选」不算），同分时新的在前。
  * 第三个位置留给匹配文章里最旧的一篇，让旧文章也有机会被看到。
  */
 export function getRelatedPosts(post: Post, posts: Post[], limit = 3) {
-  const topics = new Set(post.data.tags.filter((tag) => tag !== FEATURED_TOPIC));
+  const tags = new Set(post.data.tags.filter((tag) => tag !== FEATURED_TAG));
 
   const ranked = posts
     .filter((candidate) => candidate.id !== post.id)
     .map((candidate) => ({
       candidate,
-      score: candidate.data.tags.filter((tag) => topics.has(tag)).length,
+      score: candidate.data.tags.filter((tag) => tags.has(tag)).length,
     }))
     .filter(({ score }) => score > 0)
     .sort(
@@ -157,13 +157,26 @@ export function getBacklinks(posts: Post[]) {
   return backlinks;
 }
 
-function toPlainText(markdown: string) {
+/** 去掉 Markdown 记号后的文字。compact 时连空白也去掉，用来比较两段话。 */
+function toPlainText(markdown: string, compact = true) {
   return markdown
     .replace(/!\[[^\]]*\]\([^)]+\)/g, '')
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\[\^[^\]]*\]/g, '')
     .replace(/<[^>]+>/g, '')
     .replace(/[*_`~>#]/g, '')
-    .replace(/\s+/g, '');
+    .replace(/\s+/g, compact ? '' : ' ')
+    .trim();
+}
+
+/** 正文第一段：跳过代码块、注释、小标题、图片和分隔线。 */
+function firstParagraph(post: Post) {
+  return (post.body ?? '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .find((block) => block && !/^(#|!\[|<|---)/.test(block));
 }
 
 /** 副标题（description）和正文第一段开头一样时返回 true，这时页面上不重复显示。 */
@@ -171,12 +184,12 @@ export function descriptionRepeatsBody(post: Post) {
   const description = toPlainText(post.data.description).replace(/(\.\.\.|…)$/, '');
   if (!description) return true;
 
-  const firstParagraph = (post.body ?? '')
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .split(/\n\s*\n/)
-    .map((block) => block.trim())
-    .find((block) => block && !/^(#|!\[|<|---)/.test(block));
+  const paragraph = firstParagraph(post);
+  return Boolean(paragraph && toPlainText(paragraph).startsWith(description));
+}
 
-  return Boolean(firstParagraph && toPlainText(firstParagraph).startsWith(description));
+/** 没写导语时，网页摘要和 RSS 用正文第一段，最多 120 个字。 */
+export function getExcerpt(post: Post, limit = 120) {
+  const chars = Array.from(toPlainText(firstParagraph(post) ?? '', false));
+  return chars.length > limit ? `${chars.slice(0, limit).join('')}…` : chars.join('');
 }

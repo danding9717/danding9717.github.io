@@ -1,6 +1,6 @@
 import rss from '@astrojs/rss';
 import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
-import { getPostUrl, getPublishedPosts } from '../utils/posts';
+import { getExcerpt, getPostUrl, getPublishedPosts } from '../utils/posts';
 
 /** 把正文里以 / 开头的图片和链接补成完整网址，否则在阅读器里打不开。 */
 function absolutize(html, site) {
@@ -16,7 +16,7 @@ export async function GET(context) {
     site: context.site,
     items: posts.map((post) => ({
       title: post.data.title,
-      description: post.data.description,
+      description: post.data.description || getExcerpt(post) || undefined,
       pubDate: post.data.date,
       link: getPostUrl(post),
       // .md 文章输出全文；.mdx 文章没有预先渲染好的 HTML，只给导语和原文链接。

@@ -12,12 +12,9 @@ interface Props {
   /** 页头面包屑，例如文章页的「Dan Hu / 文章」。 */
 }
 
-const {
-  title = SITE_TITLE,
-  description = SITE_DESCRIPTION,
-  type = 'website',
-  publishedTime,
-} = Astro.props;
+const { title = SITE_TITLE, type = 'website', publishedTime } = Astro.props;
+// 摘要是空的（比如文章没写导语、正文第一段也没有字）时用网站介绍。
+const description = Astro.props.description || SITE_DESCRIPTION;
 const pageTitle = title === SITE_TITLE ? SITE_TITLE : `${title} | ${SITE_TITLE}`;
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
 const imageUrl = new URL(withBase('/logo.png'), Astro.site);

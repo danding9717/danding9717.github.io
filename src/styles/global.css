@@ -311,12 +311,12 @@ time {
   margin-bottom: 0.2em;
 }
 
-.topic-list {
+.tag-list {
   margin: 0;
   line-height: 1.9;
 }
 
-.topic-count {
+.tag-count {
   color: var(--muted);
   font-size: 0.875em;
 }
@@ -423,7 +423,7 @@ time {
   line-height: 1.6;
 }
 
-.post-footer .topic-list {
+.post-footer .tag-list {
   color: var(--muted);
 }
 
