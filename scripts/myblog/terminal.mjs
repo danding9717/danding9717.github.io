@@ -240,18 +240,15 @@ export class Screen {
   }
 
   start(onKey, onResize) {
-    this.stdin.setRawMode(true);
     this.stdin.setEncoding('utf8');
     this.stdin.on('data', createKeyReader(onKey));
-    this.stdin.resume();
     this.stdout.on('resize', () => {
+      if (!this.active) return;
       this.previous = [];
       this.stdout.write('\x1b[2J');
       onResize();
     });
-    // 切到备用屏幕（退出后终端恢复原样），开启粘贴模式。
-    this.stdout.write('\x1b[?1049h\x1b[?2004h\x1b[2J');
-    this.active = true;
+    this.resume();
   }
 
   stop() {
@@ -264,6 +261,16 @@ export class Screen {
       // 终端已经关了。
     }
     this.stdin.pause();
+  }
+
+  /** 开始，或者把终端交给别的程序（比如 vim）用完、stop 之后回来。 */
+  resume() {
+    this.stdin.setRawMode(true);
+    this.stdin.resume();
+    // 切到备用屏幕（退出后终端恢复原样），开启粘贴模式。
+    this.stdout.write('\x1b[?1049h\x1b[?2004h\x1b[2J');
+    this.previous = [];
+    this.active = true;
   }
 
   /** rows 是 paint 画好的每一行；只重画变了的行。cursor 为 null 时隐藏光标。 */

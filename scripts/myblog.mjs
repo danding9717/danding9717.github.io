@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // myblog：在终端里写博客文章，一键发布到网站。用法见 README「写文章」。
 import { spawn } from 'node:child_process';
-import { accessSync, constants, lstatSync, writeFileSync } from 'node:fs';
-import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { accessSync, constants, lstatSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { SITE_URL } from '../site.config.mjs';
@@ -12,6 +12,7 @@ import {
   PUBLISH_STEPS,
   ROOT,
   TAGS,
+  changedPosts,
   createDraft,
   defaultTitle,
   droppedImagePath,
@@ -20,6 +21,7 @@ import {
   joinDocument,
   listDocs,
   liveVersion,
+  outsideEditor,
   postUrl,
   preparePost,
   publish,
@@ -79,8 +81,12 @@ const state = {
   unpushed: 0,
   deploy: null,
   editor: null,
+  // 正在用其他软件写的这篇。
+  outside: null,
   form: null,
   publishing: null,
+  // 改过、还没更新上线的文章文件。
+  changed: new Set(),
   frame: 0,
 };
 let ticker = null;
@@ -133,7 +139,10 @@ function quit() {
 /** 退出前把没来得及自动保存的草稿（包括发布页上填了一半的）写进文件。 */
 function saveDraftNow() {
   try {
-    if (state.form) applyForm(state.form);
+    if (state.form) {
+      reloadBody(state.form.session);
+      applyForm(state.form);
+    }
     for (const session of new Set([state.editor, state.form?.session])) {
       if (session?.doc.kind !== 'draft') continue;
       const text = documentText(session);
@@ -151,6 +160,10 @@ async function refresh() {
     state.unpushed = count;
     render();
   });
+  changedPosts().then((files) => {
+    state.changed = files;
+    render();
+  });
 }
 
 function items() {
@@ -163,7 +176,7 @@ function render() {
   if (!screen.active || hungUp) return;
   const width = screen.width;
   const height = screen.height;
-  const views = { editor: renderEditor, form: renderForm, publish: renderPublish, list: renderList };
+  const views = { editor: renderEditor, outside: renderOutside, form: renderForm, publish: renderPublish, list: renderList };
   const view = views[state.view](width, height);
   screen.draw(view.rows, view.cursor ?? null);
   keepTicking();
@@ -213,6 +226,8 @@ function messageSegments() {
 async function handleKey(key) {
   if (state.view === 'editor') {
     await editorKey(key);
+  } else if (state.view === 'outside') {
+    await outsideKey(key);
   } else if (state.view === 'form') {
     await formKey(key);
   } else if (key.name === 'text') {
@@ -238,8 +253,9 @@ async function listKey(key) {
   else if (name === 'down' || name === 'j') state.selected = Math.min(list.length - 1, state.selected + 1);
   else if (name === 'enter' && doc) await openEditor(doc);
   else if (name === 'n') await openEditor(null);
-  else if (name === 'p' && doc?.kind === 'draft') openForm(await openSession(doc));
-  else if (name === 'p' && doc) say('已发布的文章按 Enter 打开修改，改完在编辑器里按 Ctrl+P 更新。');
+  else if (name === 'e' && doc) await writeOutside(doc);
+  else if (name === 'p' && doc && (doc.kind === 'draft' || state.changed.has(doc.file))) openForm(await openSession(doc));
+  else if (name === 'p' && doc) say('这篇没有改动。按 Enter 在终端里改，或者按 e 用其他软件改，改完再更新上线。');
   else if (name === 'd' && doc?.kind === 'draft') await deleteDraft(doc);
   else if (name === 'o' && doc?.kind === 'post') openUrl(postUrl(doc.id));
   else if (name === 'u' && state.unpushed) await pushNow();
@@ -294,9 +310,11 @@ function renderList(width, height) {
 
   const doc = items()[state.selected];
   const keys =
-    doc?.kind === 'post'
-      ? ' Enter 修改 · o 打开网页 · n 新建 · q 退出'
-      : ' Enter 写 · p 发布 · d 删除 · n 新建 · q 退出';
+    doc?.kind !== 'post'
+      ? ' Enter 写 · e 用其他软件写 · p 发布 · d 删除 · n 新建 · q 退出'
+      : state.changed.has(doc.file)
+        ? ' Enter 修改 · e 用其他软件改 · p 更新上线 · o 打开网页 · n 新建 · q 退出'
+        : ' Enter 修改 · e 用其他软件改 · o 打开网页 · n 新建 · q 退出';
   rows.push(paint(messageSegments() ?? listStatus(), width));
   rows.push(paint([[keys, 'dim']], width));
   return { rows };
@@ -306,7 +324,9 @@ function listRow(doc, selected, width) {
   const meta =
     state.confirmDelete === doc.file
       ? [['再按一次 d 删除这篇草稿', 'error']]
-      : [[doc.kind === 'draft' ? timeAgo(doc.mtime) : shortDate(doc.date), 'dim']];
+      : state.changed.has(doc.file)
+        ? [['有改动没上线', 'accent']]
+        : [[doc.kind === 'draft' ? timeAgo(doc.mtime) : shortDate(doc.date), 'dim']];
   // 还没起标题的草稿显示正文的第一句。
   const title = doc.title || doc.excerpt || '（空白）';
   const titleStyle = selected ? 'bold' : doc.title ? 'plain' : 'dim';
@@ -344,7 +364,7 @@ async function openEditor(doc) {
 
 /**
  * 打开一篇：标题、导语这些（frontmatter）原样存在 head 里不显示，buffer 里只有正文。
- * 编辑器和从列表直接打开的发布页都用它。
+ * 编辑器和从列表、等待页直接打开的发布页都用它。
  */
 async function openSession(doc) {
   const { head, body } = splitDocument(await readFile(doc.file, 'utf8'));
@@ -377,6 +397,7 @@ async function editorKey(key) {
   }
   if (ctrl && name === 's') return saveDraft(editor, true);
   if (ctrl && name === 'p') return publishFromEditor();
+  if (ctrl && name === 'o') return writeOutside(editor.doc);
 
   const before = buffer.version;
   const columns = editorColumns(screen.width).columns;
@@ -509,7 +530,13 @@ function renderEditor(width, height) {
   const title = readFields(editor.head, buffer.text).title;
   const label = [[doc.kind === 'draft' ? ' 草稿' : ' 已发布', 'dim'], ...(title ? [[' · ', 'dim'], [title, 'bold']] : [])];
   const dirty = documentText(editor) !== editor.savedText;
-  const status = doc.kind === 'draft' ? (dirty ? '保存中' : '已保存') : dirty ? '有修改，还没发布' : `/posts/${doc.id}/`;
+  // 已发布的文章：编辑器里改了、或者文件被其他软件改过，都还没上线。
+  const status =
+    doc.kind === 'draft'
+      ? (dirty ? '保存中' : '已保存')
+      : dirty || state.changed.has(doc.file)
+        ? '有修改，还没发布'
+        : `/posts/${doc.id}/`;
   const header = paint(spread(label, [[`${status} · ${wordCount(buffer.text)} 字 `, 'dim']], width), width);
 
   return {
@@ -527,12 +554,12 @@ function editorBottom(width) {
     : editor.buffer.linkQuery() !== null && !state.docs.posts.length
       ? [[' 还没有发布的文章可以链接。', 'dim']]
       : doc.kind === 'draft' && !editor.buffer.text.trim()
-        ? [[' 直接写正文。标题、导语和标签，发布时再填。', 'dim']]
+        ? [[' 直接写正文，标题、导语和标签发布时再填。想用 Typora 之类的软件写，按 Ctrl+O。', 'dim']]
         : []);
   const keys =
     doc.kind === 'draft'
-      ? ' Ctrl+P 发布 · Ctrl+Z 撤销 · Esc 回到列表'
-      : ' Ctrl+P 更新上线 · Ctrl+Z 撤销 · Esc 回到列表';
+      ? ' Ctrl+P 发布 · Ctrl+O 用其他软件写 · Ctrl+Z 撤销 · Esc 回到列表'
+      : ' Ctrl+P 更新上线 · Ctrl+O 用其他软件改 · Ctrl+Z 撤销 · Esc 回到列表';
   return [paint(hint, width), paint([[keys, 'dim']], width)];
 }
 
@@ -626,9 +653,193 @@ function drawPopup(body, cursorLine, width, margin, visible) {
   });
 }
 
+/* ---------- 用其他软件写 ---------- */
+
+/**
+ * 用 Typora 之类的软件打开这篇。这边每秒看一次文件，那边保存了就跟着更新，
+ * 写完回来按 Ctrl+P 发布。软件默认是系统里打开 .md 文件的那个，可以用 MYBLOG_EDITOR 换。
+ */
+async function writeOutside(doc) {
+  const editor = state.editor;
+  if (editor) {
+    // 终端里写的先存进文件，那边打开的才是最新的。已发布的文章也直接写进文件，改完一起更新上线。
+    if (editor.doc.kind === 'draft') await saveDraft(editor);
+    else if (documentText(editor) !== editor.savedText) await writeFile(editor.doc.file, documentText(editor), 'utf8');
+    closeEditor();
+  }
+  const outside = { doc, file: doc.file, text: '', mtime: 0, size: -1, missing: false, changed: false, timer: null, checking: false };
+  await readOutside(outside);
+  state.outside = outside;
+  state.view = 'outside';
+  clearMessage();
+  outside.timer = setInterval(() => checkOutside(outside), 1000);
+  // 不等它打开：有的系统里，打开文件的命令要等那个软件关掉才结束。
+  launchOutside(outside);
+}
+
+/** 文件变了就重新读进来，返回有没有变。 */
+async function readOutside(outside) {
+  let info;
+  try {
+    info = await stat(outside.file);
+  } catch {
+    outside.missing = true;
+    return false;
+  }
+  outside.missing = false;
+  if (info.mtimeMs === outside.mtime && info.size === outside.size) return false;
+  outside.mtime = info.mtimeMs;
+  outside.size = info.size;
+  outside.text = await readFile(outside.file, 'utf8');
+  if (outside.doc.kind === 'post') outside.changed = (await changedPosts()).has(outside.file);
+  return true;
+}
+
+async function checkOutside(outside) {
+  if (outside.checking) return;
+  outside.checking = true;
+  try {
+    await readOutside(outside);
+  } catch {
+    // 那边正好在写文件，下一秒再看。
+  } finally {
+    outside.checking = false;
+  }
+  if (state.outside === outside && state.view === 'outside') render();
+}
+
+function closeOutside() {
+  if (!state.outside) return;
+  clearInterval(state.outside.timer);
+  state.outside = null;
+  if (state.view === 'outside') state.view = 'list';
+}
+
+async function launchOutside(outside) {
+  const opener = outsideEditor(outside.file);
+  if (opener.custom) {
+    // MYBLOG_EDITOR 可能是 vim 这类在终端里用的编辑器：先把终端交给它，它退出了再回来。
+    // 它用着终端时按 Ctrl+C 只该停它自己，myblog 不退出。
+    if (!screen.active) return;
+    const ignore = () => {};
+    process.on('SIGINT', ignore);
+    screen.stop();
+    const exit = await new Promise((resolve) => {
+      const child = spawn(opener.command, { shell: true, stdio: 'inherit' });
+      child.on('error', (error) => resolve(error.message));
+      child.on('exit', (code, signal) =>
+        resolve(code === 0 ? null : code === 127 ? '找不到这个命令' : code === null ? `被 ${signal} 中断` : `退出码 ${code}`),
+      );
+    });
+    screen.resume();
+    process.off('SIGINT', ignore);
+    render();
+    if (exit) say(`MYBLOG_EDITOR 没有正常结束（${exit}）：${opener.custom}`, 'error', true);
+    return checkOutside(outside);
+  }
+
+  const start = (args) =>
+    new Promise((resolve) => {
+      const child = spawn(opener.command, args, { detached: true, stdio: 'ignore' });
+      child.on('error', () => resolve(-1));
+      child.on('exit', (exitCode) => resolve(exitCode ?? -1));
+      child.unref();
+    });
+  // Windows 的 explorer 打开成功也返回 1，不看它的退出码。
+  if ((await start(opener.args)) === 0 || opener.command === 'explorer' || state.outside !== outside) return;
+  if (opener.command === 'open' && (await start(['-t', outside.file])) === 0) {
+    say('没有默认打开 .md 的软件，先用「文本编辑」打开了。换成 Typora 的办法见 README。', 'error', true);
+    return;
+  }
+  say('没找到能打开 .md 文件的软件。装个 Typora，或者设置 MYBLOG_EDITOR，见 README。', 'error', true);
+}
+
+async function outsideKey(key) {
+  const outside = state.outside;
+  const { name, ctrl } = key;
+  if (name === 'escape' || (ctrl && name === 'c')) return leaveOutside();
+  if (name === 'text' && key.text.toLowerCase() === 'o') {
+    launchOutside(outside);
+    return;
+  }
+
+  // 发布、回终端里写之前先读一遍文件，拿到那边最后保存的内容。
+  if (!(ctrl && name === 'p') && name !== 'enter') return;
+  await readOutside(outside);
+  if (outside.missing) {
+    say('找不到这篇的文件了，可能在那边被改了名、移走或者删掉了。', 'error', true);
+    return;
+  }
+  if (name === 'enter') {
+    closeOutside();
+    await refresh();
+    return openEditor(outside.doc);
+  }
+  openForm(await openSession(outside.doc));
+}
+
+/** Esc：回到列表。草稿哪怕还是空的也留着，那边可能还在写。 */
+async function leaveOutside() {
+  const outside = state.outside;
+  closeOutside();
+  clearMessage();
+  await refresh();
+  const index = items().findIndex((doc) => doc.file === outside.file);
+  if (index >= 0) state.selected = index;
+}
+
+function renderOutside(width, height) {
+  const outside = state.outside;
+  const post = outside.doc.kind === 'post';
+  const { head, body } = splitDocument(outside.text);
+  const title = readFields(head, body).title;
+  const { columns, margin } = editorColumns(width);
+
+  const label = [[post ? ' 已发布' : ' 草稿', 'dim'], ...(title ? [[' · ', 'dim'], [title, 'bold']] : [])];
+  const saved = post ? (outside.changed ? '有改动，还没更新上线' : `/posts/${outside.doc.id}/`) : `${timeAgo(outside.mtime)}保存`;
+  const status = outside.missing ? [['文件不见了 ', 'error']] : [[`${saved} · ${wordCount(body)} 字 `, 'dim']];
+  const rows = [paint(spread(label, status, width), width), paint([], width)];
+  const add = (text, style) => {
+    for (const line of wrap(text, columns)) rows.push(paint([[' '.repeat(margin)], [line, style]], width));
+  };
+  add(post ? '正在用其他软件改这篇。' : '正在用其他软件写这篇。', 'bold');
+  add(
+    post
+      ? '在那边改，保存后这里会跟着更新。改完回来按 Ctrl+P 更新上线。'
+      : '在那边写，保存后这里会跟着更新。写完回来按 Ctrl+P 发布。',
+    'dim',
+  );
+  add(`文件：${path.relative(ROOT, outside.file)}`, 'dim');
+  rows.push(paint([], width));
+
+  // 下面是文件里现在的正文。
+  const room = Math.max(0, height - 2 - rows.length);
+  const lines = body.trimEnd().split('\n');
+  const wrapped = layout(lines, columns);
+  const styles = lineStyles(lines);
+  if (!body.trim()) {
+    add('（还没有内容）', 'dim');
+  } else {
+    wrapped.slice(0, room).forEach((row, index) => {
+      if (index === room - 1 && wrapped.length > room) return add('……', 'dim');
+      const parts = graphemes(lines[row.line]).slice(row.start, row.end);
+      rows.push(paint([[' '.repeat(margin)], ...group(parts, styles[row.line].slice(row.start, row.end))], width));
+    });
+  }
+
+  while (rows.length < height - 2) rows.push(paint([], width));
+  rows.length = height - 2;
+  const keys = post
+    ? ' Ctrl+P 更新上线 · Enter 回到终端里改 · o 再打开一次 · Esc 回到列表'
+    : ' Ctrl+P 发布 · Enter 回到终端里写 · o 再打开一次 · Esc 回到列表';
+  rows.push(paint(messageSegments() ?? [], width));
+  rows.push(paint([[keys, 'dim']], width));
+  return { rows };
+}
+
 /* ---------- 发布页：标题、导语、标签、网址 ---------- */
 
-/** 打开发布页。session 是编辑器里的这一篇，或者从列表直接打开的草稿。 */
+/** 打开发布页。session 是编辑器里的这一篇，或者从列表、等待页直接打开的这篇。 */
 function openForm(session) {
   const fields = readFields(session.head, session.buffer.text);
   const draft = session.doc.kind === 'draft';
@@ -723,6 +934,20 @@ function retitle(session, title) {
     buffer.setCursor(line, col);
   }
   session.head = writeFields(session.head, { title });
+}
+
+/**
+ * 不是从终端编辑器打开的发布页（列表里按 p，或者在等待页上按 Ctrl+P）：这篇可能还开在其他软件里，
+ * 发布、存回文件之前，正文换成文件里现在的，免得盖掉那边后来保存的。
+ */
+function reloadBody(session) {
+  if (session === state.editor) return;
+  try {
+    const { body } = splitDocument(readFileSync(session.doc.file, 'utf8'));
+    if (body !== session.buffer.text) session.buffer = new TextBuffer(body);
+  } catch {
+    // 文件不见了，就用打开发布页时读到的。
+  }
 }
 
 /** 把填的写回这一篇（草稿随后存进文件）。 */
@@ -827,21 +1052,23 @@ function addNewTag(form) {
   form.chip = index;
 }
 
-/** Esc：填了的都留着（草稿存进文件），回到编辑器或列表。 */
+/** Esc：填了的都留着（草稿存进文件），回到编辑器、等待页或列表。 */
 async function leaveForm() {
   const form = state.form;
   const fromEditor = state.editor === form.session;
+  reloadBody(form.session);
   applyForm(form);
   state.form = null;
-  state.view = fromEditor ? 'editor' : 'list';
+  state.view = fromEditor ? 'editor' : state.outside ? 'outside' : 'list';
   await saveDraft(form.session);
-  if (!fromEditor) await refresh();
+  if (state.view === 'list') await refresh();
 }
 
 /** 先在本地检查一遍：有问题列在发布页下面；没问题就开始发布。 */
 async function submitForm() {
   const form = state.form;
   const { session } = form;
+  reloadBody(session);
   applyForm(form);
   await saveDraft(session);
   const existing = session.doc.kind === 'post' ? session.doc : null;
@@ -867,6 +1094,7 @@ async function submitForm() {
     error: '',
     title: post.title,
     result: null,
+    outside: Boolean(state.outside),
   };
   state.view = 'publish';
   await runPublish();
@@ -960,7 +1188,7 @@ function renderForm(width, height) {
 
   while (rows.length < height - 2) rows.push(paint([], width));
   rows.length = height - 2;
-  const back = state.editor === form.session ? 'Esc 回去写正文' : 'Esc 回到列表';
+  const back = state.editor === form.session || state.outside ? 'Esc 回去写正文' : 'Esc 回到列表';
   const hint = form.newTag ? '新标签的名字。加过一次，以后发文章时都能直接挑。' : FORM_FIELDS[form.focus].hint;
   const keys = form.newTag
     ? ' Enter 加上 · Esc 不加了'
@@ -988,7 +1216,7 @@ async function publishKey(key) {
     state.form.focus = fieldWithProblem(state.form, publishing.problems) ?? state.form.focus;
     state.view = 'form';
   } else {
-    state.view = state.editor ? 'editor' : 'list';
+    state.view = state.editor ? 'editor' : state.outside ? 'outside' : 'list';
   }
 }
 
@@ -1010,6 +1238,7 @@ async function runPublish() {
     publishing.result = result;
     // 草稿已经变成文章（或者文章已经更新），编辑器和发布页不用再开着。
     if (state.editor) closeEditor();
+    closeOutside();
     state.form = null;
     state.view = 'publish';
     await refresh();
@@ -1072,6 +1301,9 @@ function renderPublish(width, height) {
     addWrapped('已经推送到 GitHub，但等了 10 分钟网站还没更新。去 GitHub 仓库的 Actions 页面看看部署有没有出错。', 'error');
   } else if (publishing.phase === 'waiting') {
     addWrapped('已经推送到 GitHub，网站正在部署，一般一两分钟。可以先回去写别的，好了会在列表下面提示。', 'dim');
+  }
+  if (publishing.outside && publishing.doc.kind === 'draft' && publishing.result) {
+    addWrapped('草稿文件已经删掉了，其他软件里开着的那个窗口可以关掉。以后要改这篇，在列表里选中它按 e。', 'dim');
   }
 
   while (rows.length < height - 1) rows.push(paint([], width));

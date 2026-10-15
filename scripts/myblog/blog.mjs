@@ -680,6 +680,9 @@ export async function publish(doc, { root = ROOT, build = buildSite, onStep = ()
     await mkdir(dirs.posts, { recursive: true });
     await writeFile(target, formatPost(post, images.body), 'utf8');
     if (original === null) written.push(target);
+    if (current && !(await git(['status', '--porcelain', '--', ...files], root, '查看文章的改动失败。'))) {
+      throw new BlogError('这篇和网站上的一模一样，没有要更新的地方。');
+    }
 
     onStep('build');
     await build(root);
@@ -752,6 +755,39 @@ export async function unpushedCount(root = ROOT) {
 export async function pushPending(root = ROOT) {
   await syncWithGitHub(root);
   await git(['push', 'origin', 'main'], root, '推送失败，检查网络后再试。');
+}
+
+/** 改过、还没提交的文章文件（比如用其他软件改了，还没更新上线）。 */
+export async function changedPosts(root = ROOT) {
+  const posts = path.relative(root, blogPaths(root).posts);
+  const result = await run('git', ['status', '--porcelain', '-z', '--', posts], root);
+  const files = new Set();
+  if (result.code !== 0) return files;
+  const entries = result.output.split('\0');
+  for (let index = 0; index < entries.length; index += 1) {
+    const status = entries[index].slice(0, 2);
+    if (status.includes('M')) files.add(path.join(root, entries[index].slice(3)));
+    // 改名的记录后面还跟着一项旧名字。
+    if (/[RC]/.test(status)) index += 1;
+  }
+  return files;
+}
+
+/* ---------- 用其他软件写 ---------- */
+
+/**
+ * 用其他软件打开文章的命令。设置了 MYBLOG_EDITOR 就用它，文件路径加在最后，
+ * 比如 `open -a Typora`、`code`、`vim`；没设置就交给系统，用默认打开 .md 文件的软件。
+ */
+export function outsideEditor(file, { env = process.env, platform = process.platform } = {}) {
+  const custom = env.MYBLOG_EDITOR?.trim();
+  if (custom) {
+    const quoted = platform === 'win32' ? `"${file}"` : `'${file.replaceAll("'", "'\\''")}'`;
+    return { custom, command: `${custom} ${quoted}` };
+  }
+  if (platform === 'darwin') return { command: 'open', args: [file] };
+  if (platform === 'win32') return { command: 'explorer', args: [file] };
+  return { command: 'xdg-open', args: [file] };
 }
 
 /* ---------- 等待上线 ---------- */

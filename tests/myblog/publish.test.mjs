@@ -9,6 +9,7 @@ import path from 'node:path';
 import { after, test } from 'node:test';
 import {
   BlogError,
+  changedPosts,
   createDraft,
   joinDocument,
   listDocs,
@@ -289,6 +290,26 @@ test('修改已发布的文章：原地更新，地址和日期不变', async ()
     publish({ ...post, text: text.replace('---\n\n', 'slug: new-name\n---\n\n') }, { root: blog.root, now: later, build: okBuild }),
     /还不能发布/,
   );
+});
+
+test('用其他软件改了已发布的文章：列出来，更新上线后就不算了；没改动时不提交', async () => {
+  const blog = await makeBlog();
+  const doc = await writeDraft(blog.root, draftText('复利', '旧正文。'));
+  await publish(doc, { root: blog.root, now: NOW, build: okBuild });
+  const [post] = (await listDocs(blog.root)).posts;
+  assert.deepEqual(await changedPosts(blog.root), new Set());
+
+  const commits = git(blog.root, 'rev-list', '--count', 'HEAD');
+  await assert.rejects(publish(post, { root: blog.root, now: NOW, build: okBuild }), /一模一样/);
+  assert.equal(git(blog.root, 'rev-list', '--count', 'HEAD'), commits);
+
+  await writeFile(post.file, (await readFile(post.file, 'utf8')).replace('旧正文。', '在别的软件里改的正文。'));
+  assert.deepEqual(await changedPosts(blog.root), new Set([post.file]));
+  const result = await publish(post, { root: blog.root, now: NOW, build: okBuild });
+  assert.equal(result.updated, true);
+  assert.match(await readFile(post.file, 'utf8'), /在别的软件里改的正文。/);
+  assert.deepEqual(await changedPosts(blog.root), new Set());
+  assert.equal(git(blog.remote, 'log', '-1', '--format=%s', 'main'), '更新：复利');
 });
 
 test('不在 main 分支上时不发布', async () => {
