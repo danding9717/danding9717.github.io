@@ -5,6 +5,7 @@ import { accessSync, constants, lstatSync, readFileSync, writeFileSync } from 'n
 import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { SITE_URL } from '../site.config.mjs';
 import {
   BlogError,
@@ -12,7 +13,10 @@ import {
   PUBLISH_STEPS,
   ROOT,
   TAGS,
+  applyUpdate,
   changedPosts,
+  checkUpdate,
+  codeVersion,
   createDraft,
   defaultTitle,
   droppedImagePath,
@@ -40,11 +44,16 @@ import { Screen, clip, graphemes, paint, textWidth, wrap } from './myblog/termin
 
 const USAGE = `用法：
   myblog           打开写作界面
-  myblog install   把 myblog 命令装到 PATH 里，之后在任何目录都能打开`;
+  myblog install   把 myblog 命令装到 PATH 里，之后在任何目录都能打开
+  myblog update    更新到 GitHub 上的最新版（平时打开 myblog 时会自动更新）`;
 
 const command = process.argv[2];
 if (command === 'install') {
   await install();
+  process.exit(0);
+}
+if (command === 'update') {
+  await updateCommand();
   process.exit(0);
 }
 if (command) {
@@ -57,6 +66,8 @@ if (!process.stdin.isTTY || !process.stdout.isTTY) {
 }
 
 const HOST = new URL(SITE_URL).host;
+// 打开时 myblog 代码的样子；之后同步 GitHub（自动更新或者发布）改了它，就重启一次用上新的。
+const CODE = codeVersion();
 const SPINNER = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
 const STEPS = [...PUBLISH_STEPS, ['live', '等待网站更新']];
 
@@ -88,6 +99,10 @@ const state = {
   publishing: null,
   // 改过、还没更新上线的文章文件。
   changed: new Set(),
+  // GitHub 上有新版本：{ titles }，等回到列表、手上没事时再更新。
+  update: null,
+  // 更新时遇到的问题，比如有没提交的文件，显示在列表下面。
+  updateBlocked: '',
   frame: 0,
 };
 let ticker = null;
@@ -112,11 +127,26 @@ await refresh();
 let keyQueue = Promise.resolve();
 screen.start(
   (key) => {
-    keyQueue = keyQueue.then(() => handleKey(key)).catch(crash);
+    queue(() => handleKey(key));
   },
   () => render(),
 );
 render();
+// 刚自动更新、重启过：说一下更新了什么。
+if (process.env.MYBLOG_UPDATED) {
+  say(process.env.MYBLOG_UPDATED, 'ok');
+  delete process.env.MYBLOG_UPDATED;
+}
+checkUpdate().then((update) => {
+  if (!update) return;
+  state.update = update;
+  queue(updateWhenIdle);
+});
+
+/** 按键和更新排队一件一件做，免得同时动 git。 */
+function queue(task) {
+  keyQueue = keyQueue.then(task).catch(crash);
+}
 
 function crash(error) {
   saveDraftNow();
@@ -238,6 +268,7 @@ async function handleKey(key) {
     await (state.view === 'list' ? listKey : publishKey)(key);
   }
   render();
+  if (state.view === 'list') await updateWhenIdle();
 }
 
 /* ---------- 列表 ---------- */
@@ -347,6 +378,7 @@ function listStatus() {
     return [[` 「${deploy.title}」等了 10 分钟网站还没更新，去 GitHub 仓库的 Actions 页面看看。`, 'error']];
   }
   if (state.unpushed) return [[` 有 ${state.unpushed} 个提交还没推送到 GitHub，按 u 推送。`, 'error']];
+  if (state.updateBlocked) return [[` ${state.updateBlocked}`, 'dim']];
   return [];
 }
 
@@ -1275,6 +1307,7 @@ async function watchDeploy(result, before) {
     state.publishing.phase = live ? 'done' : 'timeout';
   }
   render();
+  queue(updateWhenIdle);
 }
 
 function renderPublish(width, height) {
@@ -1320,6 +1353,70 @@ function renderPublish(width, height) {
   rows.length = height - 1;
   rows.push(paint([[` ${keys}`, 'dim']], width));
   return { rows };
+}
+
+/* ---------- 自动更新 ---------- */
+
+/**
+ * 在列表页、没在发布、也没在等网站更新时：GitHub 上有新版本就同步下来；
+ * myblog 自己的代码变了（自动更新或者发布时同步到的）就重启，用上新的。
+ */
+async function updateWhenIdle() {
+  if (state.view !== 'list' || state.publishing || state.deploy?.status === 'waiting') return;
+  let titles = [];
+  if (state.update) {
+    titles = state.update.titles;
+    state.update = null;
+    say('正在更新 myblog…', 'plain', true);
+    render();
+    try {
+      await applyUpdate(undefined, {
+        onStep: (step) => step === 'install' && say('正在安装新的依赖，可能要一两分钟…', 'plain', true),
+      });
+      state.updateBlocked = '';
+    } catch (error) {
+      clearMessage();
+      state.updateBlocked = `myblog 有新版本，这次没更新：${error.message}下次打开时会再试，也可以运行 myblog update。`;
+      await refresh();
+      return;
+    }
+    clearMessage();
+    await refresh();
+  }
+  const text = titles.length ? `已更新：${titles.slice(-3).join('；')}${titles.length > 3 ? ` 等 ${titles.length} 项` : ''}` : 'myblog 已更新到最新版。';
+  if (codeVersion() !== CODE) return restart(text);
+  if (titles.length) say(text, 'ok');
+}
+
+/** 换成新代码重新打开：新的 myblog 接管终端，这个等它退出后跟着退出。 */
+function restart(text) {
+  screen.stop();
+  const child = spawn(process.execPath, [fileURLToPath(import.meta.url)], {
+    stdio: 'inherit',
+    env: { ...process.env, MYBLOG_UPDATED: text },
+  });
+  child.on('error', (error) => {
+    console.error(`myblog 更新后重新打开失败，再输入一次 myblog 就好：${error.message}`);
+    process.exit(1);
+  });
+  child.on('exit', (code) => process.exit(code ?? 0));
+  // 不再处理按键，也不再画屏幕。
+  return new Promise(() => {});
+}
+
+/** myblog update：在终端里直接更新。 */
+async function updateCommand() {
+  console.log('正在同步 GitHub…');
+  try {
+    const titles = await applyUpdate(undefined, {
+      onStep: (step) => step === 'install' && console.log('依赖有变化，正在安装（npm ci）…'),
+    });
+    console.log(titles.length ? `已更新：\n${titles.map((title) => `  · ${title}`).join('\n')}` : '已经是最新版了。');
+  } catch (error) {
+    console.error(error.message);
+    for (const problem of error.problems ?? []) console.error(`  · ${problem}`);
+    process.exit(1);
+  }
 }
 
 /* ---------- 小工具 ---------- */

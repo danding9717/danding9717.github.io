@@ -1,6 +1,7 @@
 // 草稿和文章：读写、发布前检查、[[ ]] 链接、图片，以及发布（同步 GitHub → 构建 → 提交推送）。
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -773,6 +774,89 @@ export async function changedPosts(root = ROOT) {
   return files;
 }
 
+/* ---------- 更新 myblog ---------- */
+
+/**
+ * 去 GitHub 看一眼 main 上有没有本地还没有的提交，不动本地文件。
+ * 不在 main 分支、没网、等太久都当作没有，返回 null；有的话返回 { count, titles }。
+ */
+export async function checkUpdate(root = ROOT, { timeoutMs = 60_000 } = {}) {
+  const branch = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], root);
+  if (branch.code !== 0 || branch.output.trim() !== 'main') return null;
+  if ((await run('git', ['fetch', '-q', 'origin', 'main'], root, { timeoutMs })).code !== 0) return null;
+  const titles = await updateTitles(root, 'HEAD');
+  return titles.length ? { count: titles.length, titles } : null;
+}
+
+/**
+ * 更新到 GitHub 上最新的版本：和发布时一样同步（草稿不进 git，不受影响），依赖变了就重新安装。
+ * 有改过、还没提交的文件时不更新，免得和拉下来的改动搅在一起。返回更新了哪些（PR 的标题），已经是最新时是空的。
+ */
+export async function applyUpdate(root = ROOT, { install = installDependencies, onStep = () => {} } = {}) {
+  // 不用 git()：它会去掉开头的空格，而 porcelain 每行前两个字符是状态。
+  const status = await run('git', ['status', '--porcelain', '--untracked-files=no'], root);
+  if (status.code !== 0) throw new BlogError('这里不是博客的 git 仓库。');
+  const files = status.output.split('\n').filter(Boolean).map((line) => line.slice(3));
+  if (files.length) {
+    throw new BlogError(`有改过、还没提交的文件（${files.slice(0, 2).join('、')}${files.length > 2 ? ' 等' : ''}），先把改动更新上线或者撤销。`, files);
+  }
+  const before = await git(['rev-parse', 'HEAD'], root, '这里不是博客的 git 仓库。');
+  onStep('sync');
+  await syncWithGitHub(root);
+  const titles = await updateTitles(root, before);
+  // 三个点：只看 GitHub 那边改了什么，本地还没推送的提交不算。
+  const changed = (await git(['diff', '--name-only', `${before}...origin/main`], root, '查看更新的内容失败。')).split('\n');
+  if (changed.some((file) => file === 'package.json' || file === 'package-lock.json')) {
+    onStep('install');
+    await install(root);
+  }
+  return titles;
+}
+
+/** from 之后 GitHub 上多出来的提交，合并 PR 的提交用 PR 的标题，旧的在前。 */
+async function updateTitles(root, from) {
+  const log = await run('git', ['log', '--first-parent', '--reverse', '--format=%s%x1f%b%x1e', `${from}..origin/main`], root);
+  if (log.code !== 0) return [];
+  return log.output
+    .split('\x1e')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [subject, body = ''] = entry.split('\x1f');
+      const title = /^Merge pull request #\d+/.test(subject) ? body.trim().split('\n')[0].trim() : '';
+      return title || subject.trim();
+    });
+}
+
+/** 依赖按 package-lock.json 装好（npm ci 不会改 package-lock.json，免得留下没提交的改动）。 */
+export async function installDependencies(root = ROOT) {
+  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const result = await run(npm, ['ci', '--no-audit', '--no-fund'], root);
+  if (result.code !== 0) {
+    throw new BlogError('安装依赖失败，检查网络后在博客目录运行 npm ci：', stripAnsi(result.output).trim().split(/\r?\n/).slice(-4));
+  }
+}
+
+/** myblog 自己的代码的指纹：和打开时不一样，说明代码被更新了，要重启才用上新的。 */
+export function codeVersion(root = ROOT) {
+  const hash = createHash('sha1');
+  const dir = path.join(root, 'scripts/myblog');
+  let names = [];
+  try {
+    names = readdirSync(dir).filter((name) => name.endsWith('.mjs')).sort();
+  } catch {
+    // 没有这个目录就只看主文件。
+  }
+  for (const file of [path.join(root, 'scripts/myblog.mjs'), ...names.map((name) => path.join(dir, name))]) {
+    try {
+      hash.update(file).update(readFileSync(file));
+    } catch {
+      hash.update(`${file} missing`);
+    }
+  }
+  return hash.digest('hex');
+}
+
 /* ---------- 用其他软件写 ---------- */
 
 /**
@@ -825,7 +909,8 @@ async function git(args, root, message) {
   return result.output.trim();
 }
 
-function run(command, args, cwd) {
+/** timeoutMs：超时就停掉，当作失败（比如网络卡住的 git fetch）。 */
+function run(command, args, cwd, { timeoutMs = 0 } = {}) {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd,
@@ -837,8 +922,23 @@ function run(command, args, cwd) {
     let output = '';
     child.stdout.on('data', (chunk) => (output += chunk));
     child.stderr.on('data', (chunk) => (output += chunk));
-    child.on('error', (error) => resolve({ code: -1, output: error.message }));
-    child.on('close', (code) => resolve({ code, output }));
+    const timer = timeoutMs
+      ? setTimeout(() => {
+          try {
+            process.kill(-child.pid, 'SIGKILL');
+          } catch {
+            // 已经结束了。
+          }
+        }, timeoutMs)
+      : null;
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      resolve({ code: -1, output: error.message });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code: code ?? -1, output });
+    });
   });
 }
 
