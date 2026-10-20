@@ -33,6 +33,7 @@ import {
   unpushedCount,
   waitUntilLive,
   writeFields,
+  zonedTime,
 } from './myblog/blog.mjs';
 import { TextBuffer, cursorRow, layout, widthOf, wordCount } from './myblog/editor.mjs';
 import { Screen, clip, graphemes, paint, textWidth, wrap } from './myblog/terminal.mjs';
@@ -320,17 +321,19 @@ function renderList(width, height) {
   return { rows };
 }
 
+/** 标题后面紧跟着时间：已发布的是发布日期，草稿是多久前改的。不放在最右边，窗口宽时离标题太远，容易看漏。 */
 function listRow(doc, selected, width) {
-  const meta =
-    state.confirmDelete === doc.file
-      ? [['再按一次 d 删除这篇草稿', 'error']]
-      : state.changed.has(doc.file)
-        ? [['有改动没上线', 'accent']]
-        : [[doc.kind === 'draft' ? timeAgo(doc.mtime) : shortDate(doc.date), 'dim']];
-  // 还没起标题的草稿显示正文的第一句。
+  const notes =
+    doc.kind === 'draft'
+      ? [state.confirmDelete === doc.file ? ['再按一次 d 删除这篇草稿', 'error'] : [timeAgo(doc.mtime), 'dim']]
+      : [[formatDate(doc.date), 'dim'], ...(state.changed.has(doc.file) ? [['有改动没上线', 'accent']] : [])];
+  const tail = notes.filter(([text]) => text).flatMap((note, index) => [[index ? ' · ' : '  ', 'dim'], note]);
+  // 还没起标题的草稿显示正文的第一句。放不下时截短标题，时间和提示留着。
   const title = doc.title || doc.excerpt || '（空白）';
+  const room = width - 5 - textWidth(tail.map(([text]) => text).join(''));
+  const shown = textWidth(title) > room ? `${clip(title, room - 1)}…` : title;
   const titleStyle = selected ? 'bold' : doc.title ? 'plain' : 'dim';
-  return paint(spread([[selected ? '  › ' : '    ', 'accent'], [title, titleStyle]], [...meta, [' ']], width), width);
+  return paint([[selected ? '  › ' : '    ', 'accent'], [shown, titleStyle], ...tail], width);
 }
 
 function listStatus() {
@@ -647,7 +650,7 @@ function drawPopup(body, cursorLine, width, margin, visible) {
   matches.forEach((post, index) => {
     const active = index === selected;
     body[start + index] = paint(
-      [[' '.repeat(margin)], [active ? ' › ' : '   ', 'accent'], [post.title, active ? 'inverse' : 'plain'], [`  ${shortDate(post.date)}`, 'dim']],
+      [[' '.repeat(margin)], [active ? ' › ' : '   ', 'accent'], [post.title, active ? 'inverse' : 'plain'], [`  ${formatDate(post.date)}`, 'dim']],
       width,
     );
   });
@@ -1339,11 +1342,10 @@ function spread(left, right, width) {
   return [...left, [' '.repeat(width - used)], ...right];
 }
 
-function shortDate(value) {
+/** 北京时间的日期，比如 2026-10-20，和网站上显示的一样。 */
+function formatDate(value) {
   const time = Date.parse(value);
-  if (!time) return '';
-  const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(time);
-  return day.startsWith(String(new Date().getFullYear())) ? day.slice(5) : day;
+  return time ? zonedTime(new Date(time)).iso.slice(0, 10) : '';
 }
 
 function timeAgo(time) {
@@ -1352,7 +1354,7 @@ function timeAgo(time) {
   if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
   if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
   if (seconds < 86400 * 2) return '昨天';
-  return shortDate(new Date(time).toISOString());
+  return formatDate(new Date(time).toISOString());
 }
 
 function openUrl(url) {
