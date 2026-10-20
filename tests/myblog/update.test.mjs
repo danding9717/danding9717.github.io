@@ -87,6 +87,12 @@ test('更新：拉下新版本，代码指纹变了，草稿还在；依赖没�
 
   // 已经是最新的：什么都不做。
   assert.deepEqual(await applyUpdate(root, { install: async () => (installs += 1) }), []);
+
+  // 只换了网址（比如以后用自己的域名）也算，myblog 要重启才会用新网址。
+  const beforeDomain = codeVersion(root);
+  await mergePr(upstream, 27, '换成自己的域名', { 'site.config.mjs': "export const SITE_URL = 'https://example.com';\n" });
+  await applyUpdate(root, { install: async () => (installs += 1) });
+  assert.notEqual(codeVersion(root), beforeDomain);
 });
 
 test('更新：package-lock.json 变了就重新装依赖；本地没推送的提交留着', async () => {

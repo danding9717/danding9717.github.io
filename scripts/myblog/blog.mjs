@@ -837,7 +837,7 @@ export async function installDependencies(root = ROOT) {
   }
 }
 
-/** myblog 自己的代码的指纹：和打开时不一样，说明代码被更新了，要重启才用上新的。 */
+/** myblog 自己的代码（连同它读的网址设置 site.config.mjs）的指纹：和打开时不一样，说明被更新了，要重启才用上新的。 */
 export function codeVersion(root = ROOT) {
   const hash = createHash('sha1');
   const dir = path.join(root, 'scripts/myblog');
@@ -847,7 +847,8 @@ export function codeVersion(root = ROOT) {
   } catch {
     // 没有这个目录就只看主文件。
   }
-  for (const file of [path.join(root, 'scripts/myblog.mjs'), ...names.map((name) => path.join(dir, name))]) {
+  const files = [path.join(root, 'site.config.mjs'), path.join(root, 'scripts/myblog.mjs'), ...names.map((name) => path.join(dir, name))];
+  for (const file of files) {
     try {
       hash.update(file).update(readFileSync(file));
     } catch {
