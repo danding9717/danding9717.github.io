@@ -97,8 +97,9 @@ time {
   line-height: 1.4;
 }
 
+/* 名字的颜色比其他陶土色强调深一些。 */
 .site-title {
-  color: var(--accent-text);
+  color: var(--site-title);
   font-family: var(--font-mono);
   font-weight: 700;
   text-decoration: none;
@@ -202,12 +203,6 @@ time {
 }
 
 /* ---------- 首页 ---------- */
-
-.intro {
-  margin: 0 0 3rem;
-  line-height: 1.8;
-  text-wrap: pretty;
-}
 
 .home-section {
   margin: 0 0 3rem;
