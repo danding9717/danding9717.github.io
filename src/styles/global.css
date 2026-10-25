@@ -97,9 +97,11 @@ time {
   line-height: 1.4;
 }
 
+/* 名字比导航链接大一号，颜色比其他陶土色强调深一些。 */
 .site-title {
-  color: var(--accent-text);
+  color: var(--site-title);
   font-family: var(--font-mono);
+  font-size: 1.375rem;
   font-weight: 700;
   text-decoration: none;
   white-space: nowrap;

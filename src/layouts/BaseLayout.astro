@@ -9,7 +9,6 @@ interface Props {
   description?: string;
   type?: 'website' | 'article';
   publishedTime?: Date;
-  /** 页头面包屑，例如文章页的「Dan Hu / 文章」。 */
 }
 
 const { title = SITE_TITLE, type = 'website', publishedTime } = Astro.props;

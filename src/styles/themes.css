@@ -12,6 +12,7 @@
   --secondary: #4f4f4b;
   --accent: #cc7d5e;
   --accent-text: #a95639;
+  --site-title: #963f23;
   --accent-soft: rgb(204 125 94 / 12%);
   --selection: rgb(204 125 94 / 28%);
   --line: rgb(45 45 43 / 15%);
@@ -32,6 +33,7 @@
   --secondary: #d0d0cc;
   --accent: #cc7d5e;
   --accent-text: #dfa087;
+  --site-title: #db7a58;
   --accent-soft: rgb(204 125 94 / 18%);
   --selection: rgb(204 125 94 / 34%);
   --line: rgb(249 249 247 / 15%);
@@ -54,6 +56,7 @@
     --secondary: #d0d0cc;
     --accent: #cc7d5e;
     --accent-text: #dfa087;
+    --site-title: #db7a58;
     --accent-soft: rgb(204 125 94 / 18%);
     --selection: rgb(204 125 94 / 34%);
     --line: rgb(249 249 247 / 15%);
