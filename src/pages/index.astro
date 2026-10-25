@@ -2,7 +2,7 @@
 import PostRow from '../components/PostRow.astro';
 import TagList from '../components/TagList.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { SITE_DESCRIPTION, SITE_INTRO, SITE_TITLE } from '../consts';
+import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
 import {
   formatDate,
   getExcerpt,
@@ -22,8 +22,6 @@ const tags = getTags(posts);
 ---
 
 <BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
-  <p class="intro">{SITE_INTRO}</p>
-
   {
     latest ? (
       <>

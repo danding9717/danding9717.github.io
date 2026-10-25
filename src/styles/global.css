@@ -205,12 +205,6 @@ time {
 
 /* ---------- 首页 ---------- */
 
-.intro {
-  margin: 0 0 3rem;
-  line-height: 1.8;
-  text-wrap: pretty;
-}
-
 .home-section {
   margin: 0 0 3rem;
 }
