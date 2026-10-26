@@ -1,0 +1,88 @@
+---
+// 文章页标题上方那行末尾的浏览量，像 X 推文下面的「查看」数。计数存在 Vercount，配置见 consts.ts 的 VIEWS。
+// 每打开一次算一次浏览，同一个标签页里刷新不重复算；本机预览不计数。
+// 没开 JS、Vercount 打不开或超时，这一段整个不显示。
+import { VIEWS } from '../consts';
+
+interface Props {
+  /** 文章地址名（slug），和评论区一样用它对应计数，换域名、改标题都不会断。 */
+  slug: string;
+}
+
+const { slug } = Astro.props;
+const endpoint = VIEWS.endpoint;
+const key = new URL(`${slug}/`, VIEWS.keyPrefix).href;
+---
+
+{
+  endpoint && (
+    <span class="view-count" hidden>
+      <span aria-hidden="true"> · </span>
+      <span><span class="view-count-value" /> 次浏览</span>
+      <script is:inline define:vars={{ endpoint, key }}>
+        const box = document.currentScript.closest('.view-count');
+        const value = box.querySelector('.view-count-value');
+        const cacheKey = `dan-ding-views:${key}`;
+        const visitorKey = 'dan-ding-visitor';
+        // 一万以下照写，往上写成「1.2万」。
+        const format = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
+        const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+
+        function show(count) {
+          const n = Number(count);
+          if (!Number.isFinite(n) || n < 1) return false;
+          value.textContent = format.format(n);
+          box.hidden = false;
+          return true;
+        }
+
+        function readCache() {
+          try {
+            return sessionStorage.getItem(cacheKey);
+          } catch {
+            return null;
+          }
+        }
+
+        // 这个浏览器第一次来本站时告诉 Vercount 是新访客，它用来算全站访客数。
+        function isNewVisitor() {
+          try {
+            if (localStorage.getItem(visitorKey)) return false;
+            localStorage.setItem(visitorKey, '1');
+          } catch {}
+          return true;
+        }
+
+        async function count() {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 8000);
+          try {
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: key, isNewUv: isNewVisitor() }),
+              credentials: 'omit',
+              cache: 'no-store',
+              signal: controller.signal,
+            });
+            if (!response.ok) return;
+            const payload = await response.json();
+            const views = (payload?.data ?? payload)?.page_pv;
+            if (show(views)) {
+              try {
+                sessionStorage.setItem(cacheKey, String(views));
+              } catch {}
+            }
+          } catch {
+          } finally {
+            clearTimeout(timer);
+          }
+        }
+
+        const cached = readCache();
+        if (cached) show(cached);
+        else if (!isLocal) count();
+      </script>
+    </span>
+  )
+}

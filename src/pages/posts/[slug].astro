@@ -3,6 +3,7 @@ import { render } from 'astro:content';
 import Comments from '../../components/Comments.astro';
 import PostRow from '../../components/PostRow.astro';
 import TagList from '../../components/TagList.astro';
+import ViewCount from '../../components/ViewCount.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import {
   descriptionRepeatsBody,
@@ -57,6 +58,7 @@ const tags = [...new Set(post.data.tags)];
         <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time>
         <span aria-hidden="true"> · </span>
         <span>{getReadingMinutes(post)} 分钟阅读</span>
+        <ViewCount slug={post.id} />
       </p>
       <h1 data-pagefind-meta="title">{post.data.title}</h1>
       {showSubtitle && <p class="post-subtitle">{post.data.description}</p>}
