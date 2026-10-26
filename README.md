@@ -24,7 +24,7 @@ npm run preview
 整体参考 Naval（nav.al）和 Steph Ango（stephango.com）：一篇只讲一个观点，全站只有一张安静的文章清单。文章用「标签」（frontmatter 里的 `tags`）组织，不再有分类页。
 
 - `/`：最新一篇（不加框，学 Naval 的条目：大标题、摘要、日期，整块可点；摘要是导语，没写导语就用正文第一段）→ 精选（带「精选」标签的文章达到 3 篇才显示，最多 5 篇）→ 标签。全部文章只在 `/archive/` 列出。没有文章时显示空状态。
-- `/posts/<文件名>/`：文章页。标题上方是日期和阅读时长，下面是副标题（`description`，没写或和正文第一段重复时不显示）。二级标题达到 4 个时在正文上方放一个简单目录。文末依次是「提到这篇的文章」（反向链接）、「相关文章」（按共同标签，最多 3 篇）、「标签：……」和评论区（见下文「评论」）。
+- `/posts/<文件名>/`：文章页。标题上方是日期、阅读时长和浏览量（见下文「浏览量」），下面是副标题（`description`，没写或和正文第一段重复时不显示）。二级标题达到 4 个时在正文上方放一个简单目录。文末依次是「提到这篇的文章」（反向链接）、「相关文章」（按共同标签，最多 3 篇）、「标签：……」和评论区（见下文「评论」）。
 - `/tags/`、`/tags/<标签>/`：按标签浏览。以前的 `/topics/` 会跳到 `/tags/`。
 - `/now/`：Now 页（最近在做什么），内容直接改 `src/pages/now.md`，改完顺手更新里面的 `updated` 日期。
 - `/archive/`：归档（页头第一个链接）。标题下是一条搜索框（Pagefind 全文搜索，有输入时用结果替换列表，按 Esc 清空），下面是精选和按年份排列的全部文章。`/archive/?q=关键词` 可以直接打开搜索结果。
@@ -160,6 +160,16 @@ tags: ["财富", "精选"]
 2. 安装 [giscus 应用](https://github.com/apps/giscus)，只授权本仓库。
 3. 打开 [giscus.app](https://giscus.app/zh-CN)，仓库填 `danding9717/danding9717.github.io`，分类选 Announcements，把生成代码里的 `data-category-id` 填进 `GISCUS.categoryId`。
 
+## 浏览量
+
+文章页标题上方那行的「N 次浏览」，像 X 推文下面的查看数。计数存在 [Vercount](https://www.vercount.one/)（不蒜子的替代，免费，不用注册，读者也不用登录）。
+
+- 设置在 `src/consts.ts` 的 `VIEWS`。`endpoint` 留空时不显示浏览量。
+- 每篇按「`keyPrefix` + 地址名（slug）」计数。`keyPrefix` 写死成现在的 `https://danding9717.github.io/posts/`，换域名时不要改它，浏览量会接着累计；改了 slug 会从头算。
+- 每打开一次文章算一次浏览，作者自己看也算；同一个标签页里刷新不重复算。超过一万显示成「1.2万」。
+- 本机预览（localhost）不计数，也不显示浏览量。
+- 读者没开 JS、或者 Vercount 打不开、8 秒内没有回应时，这一段不显示，页面其他部分照常。
+
 ## GitHub Pages 部署
 
 博客网址只写在根目录的 `site.config.mjs` 里（`SITE_URL`），网站构建和 `myblog`（发布后显示的文章网址）都从这里读取，不要在别处再写一遍。当前是：
@@ -181,4 +191,4 @@ https://danding9717.github.io/
    - 如果也用 `www.example.com`：一条 CNAME 记录，指向 `danding9717.github.io`。
 4. 等 DNS 生效、GitHub 检查通过后，在同一页勾选 Enforce HTTPS。
 
-完成后访问 `danding9717.github.io` 的旧链接会由 GitHub 自动跳到新域名，文章地址不变。RSS、sitemap 和每页的 canonical 链接会在下一次构建时换成新域名。评论区不用改设置，已有评论照常显示。
+完成后访问 `danding9717.github.io` 的旧链接会由 GitHub 自动跳到新域名，文章地址不变。RSS、sitemap 和每页的 canonical 链接会在下一次构建时换成新域名。评论区不用改设置，已有评论照常显示；浏览量也不用改设置，接着累计。
