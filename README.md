@@ -158,14 +158,14 @@ tags: ["财富", "精选"]
 
 1. 仓库 Settings → General → Features 里勾选 Discussions。
 2. 安装 [giscus 应用](https://github.com/apps/giscus)，只授权本仓库。
-3. 打开 [giscus.app](https://giscus.app/zh-CN)，仓库填 `danding9717/danding9717.github.io`，分类选 Announcements，把生成代码里的 `data-category-id` 填进 `GISCUS.categoryId`。
+3. 打开 [giscus.app](https://giscus.app/zh-CN)，仓库填 `ethanhu9717/ethanhu9717.github.io`，分类选 Announcements，把生成代码里的 `data-category-id` 填进 `GISCUS.categoryId`。
 
 ## 浏览量
 
 文章页标题上方那行的「N 次浏览」，像 X 推文下面的查看数。计数存在 [Vercount](https://www.vercount.one/)（不蒜子的替代，免费，不用注册，读者也不用登录）。
 
 - 设置在 `src/consts.ts` 的 `VIEWS`。`endpoint` 留空时不显示浏览量。
-- 每篇按「`keyPrefix` + 地址名（slug）」计数。`keyPrefix` 写死成现在的 `https://danding9717.github.io/posts/`，换域名时不要改它，浏览量会接着累计；改了 slug 会从头算。
+- 每篇按「`keyPrefix` + 地址名（slug）」计数。`keyPrefix` 写死成最初的 `https://danding9717.github.io/posts/`，换域名时不要改它，浏览量会接着累计；改了 slug 会从头算。
 - 每打开一次文章算一次浏览，作者自己看也算；同一个标签页里刷新不重复算。超过一万显示成「1.2万」。
 - 本机预览（localhost）不计数，也不显示浏览量。
 - 读者没开 JS、或者 Vercount 打不开、8 秒内没有回应时，这一段不显示，页面其他部分照常。
@@ -175,7 +175,7 @@ tags: ["财富", "精选"]
 博客网址只写在根目录的 `site.config.mjs` 里（`SITE_URL`），网站构建和 `myblog`（发布后显示的文章网址）都从这里读取，不要在别处再写一遍。当前是：
 
 ```text
-https://danding9717.github.io/
+https://ethanhu9717.github.io/
 ```
 
 在仓库 Settings → Pages 将 Source 设为 GitHub Actions。推送到 `main` 后，工作流自动构建并发布。
@@ -188,7 +188,7 @@ https://danding9717.github.io/
 2. 在仓库 Settings → Pages → Custom domain 填入 `example.com` 并保存。用 GitHub Actions 部署时不需要 `CNAME` 文件，以这里的设置为准。
 3. 在域名商的 DNS 设置里添加记录：
    - 根域名 `example.com`：4 条 A 记录，指向 `185.199.108.153`、`185.199.109.153`、`185.199.110.153`、`185.199.111.153`。
-   - 如果也用 `www.example.com`：一条 CNAME 记录，指向 `danding9717.github.io`。
+   - 如果也用 `www.example.com`：一条 CNAME 记录，指向 `ethanhu9717.github.io`。
 4. 等 DNS 生效、GitHub 检查通过后，在同一页勾选 Enforce HTTPS。
 
-完成后访问 `danding9717.github.io` 的旧链接会由 GitHub 自动跳到新域名，文章地址不变。RSS、sitemap 和每页的 canonical 链接会在下一次构建时换成新域名。评论区不用改设置，已有评论照常显示；浏览量也不用改设置，接着累计。
+完成后访问 `ethanhu9717.github.io` 的旧链接会由 GitHub 自动跳到新域名，文章地址不变。RSS、sitemap 和每页的 canonical 链接会在下一次构建时换成新域名。评论区不用改设置，已有评论照常显示；浏览量也不用改设置，接着累计。

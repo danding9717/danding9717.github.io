@@ -126,7 +126,7 @@ export function getRelatedPosts(post: Post, posts: Post[], limit = 3) {
 
 /** 正文里指向 /posts/<id>/ 的站内链接。 */
 const POST_LINK_PATTERN =
-  /(?:\]\(|href=["'])(?:https?:\/\/danding9717\.github\.io)?\/posts\/([^/)"'#?\s]+)\/?/g;
+  /(?:\]\(|href=["'])(?:https?:\/\/ethanhu9717\.github\.io)?\/posts\/([^/)"'#?\s]+)\/?/g;
 
 export function getLinkedPostIds(post: Post) {
   const ids = new Set<string>();
