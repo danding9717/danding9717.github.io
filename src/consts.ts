@@ -27,6 +27,8 @@ export const HOME_LINKS = {
   label: 'Links',
   links: [
     { label: 'X', href: 'https://x.com/ethanhu9717' },
+    // 抖音「Space航天」的主页。用 douyin.com/user/ 的固定地址，不用分享短链（短链会带上手机的设备编号）。
+    { label: '抖音', href: 'https://www.douyin.com/user/MS4wLjABAAAAi2ArmZulMTaPMHXZdHdeuSapMJFqAmUSoPaFuqpmyuI' },
     { label: 'GitHub', href: GITHUB_URL },
   ],
 };
