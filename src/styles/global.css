@@ -535,6 +535,16 @@ time {
   color: var(--muted);
 }
 
+/* 文末的「N 分钟阅读 · N 次浏览」，紧跟在标签下面，和标题上方的日期一样用等宽字。 */
+.post-footer .post-info {
+  margin: 0;
+  font-family: var(--font-mono);
+}
+
+.post-footer .tag-list + .post-info {
+  margin-top: 0.4em;
+}
+
 /* 评论区（giscus）。iframe 里的配色在 public/giscus/，跟着页面的浅色、深色切换。 */
 .post-footer > * + .comments {
   margin-top: 2.5em;
