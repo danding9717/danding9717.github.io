@@ -1,5 +1,6 @@
 // 文章的分享图：在 X、Telegram、Slack 这类地方分享链接时显示的那张 1200×630 的大图。
 // 用 SVG 排好版，再用 resvg 转成 PNG。中文字体用系统里装的：GitHub Actions 上装 Noto Sans CJK（见 deploy.yml），Mac 上是苹方。
+import { existsSync } from 'node:fs';
 import { Resvg } from '@resvg/resvg-js';
 import { AUTHOR_NAME, OG_IMAGE } from '../consts';
 
@@ -107,9 +108,22 @@ export function ogSvg({ title, date }: { title: string; date: string }) {
 </svg>`;
 }
 
+// 常见位置的中文和等宽字体，找到了就直接交给 resvg，比每张图都把系统字体扫一遍快。一个中文字体都没找到时才扫系统字体。
+const FONT_FILES = [
+  '/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc',
+  '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+  '/System/Library/Fonts/PingFang.ttc',
+  '/System/Library/Fonts/Hiragino Sans GB.ttc',
+  '/System/Library/Fonts/STHeiti Medium.ttc',
+  '/System/Library/Fonts/Menlo.ttc',
+].filter((file) => existsSync(file));
+const FONT_OPTIONS = FONT_FILES.some((file) => !file.includes('Menlo'))
+  ? { loadSystemFonts: false, fontFiles: FONT_FILES }
+  : { loadSystemFonts: true };
+
 export function renderOgImage(input: { title: string; date: string }) {
   const resvg = new Resvg(ogSvg(input), {
-    font: { loadSystemFonts: true, defaultFontFamily: 'Noto Sans CJK SC' },
+    font: { ...FONT_OPTIONS, defaultFontFamily: 'Noto Sans CJK SC' },
   });
   return resvg.render().asPng();
 }
