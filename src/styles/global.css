@@ -212,6 +212,30 @@ time {
   margin-bottom: 0;
 }
 
+/* 文章上方的一行外部链接，像 Naval 的「Podcast X Apple Spotify …」：灰色小字，后面是陶土色的粗体链接。 */
+.home-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25em 0.9em;
+  margin: 0 0 3rem;
+  line-height: 1.5;
+}
+
+.home-links-label {
+  color: var(--muted);
+}
+
+.home-links a {
+  color: var(--accent-text);
+  font-weight: var(--font-strong);
+  text-decoration: none;
+}
+
+.home-links a:hover {
+  color: var(--text);
+}
+
 /* 首页学 Naval：一篇接一篇，每篇不加框，靠大标题撑起层级；整块是一个链接。 */
 .post-entries {
   padding: 0;

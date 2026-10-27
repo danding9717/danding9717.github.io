@@ -1,14 +1,24 @@
 ---
 import PostFeed from '../components/PostFeed.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { HOME_LINKS, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
 import { getPublishedPosts, paginatePosts } from '../utils/posts';
 
-// 首页学 Naval：最新的 10 篇一篇接一篇，最下面「阅读更多」接着加载。精选和标签在归档页。
+// 首页学 Naval：最上面一行外部链接，下面最新的 10 篇一篇接一篇，最下面「阅读更多」接着加载。精选和标签在归档页。
 const [first] = paginatePosts(await getPublishedPosts());
 ---
 
 <BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
+  {
+    HOME_LINKS.links.length > 0 && (
+      <p class="home-links">
+        <span class="home-links-label">{HOME_LINKS.label}</span>
+        {HOME_LINKS.links.map((link) => (
+          <a href={link.href}>{link.label}</a>
+        ))}
+      </p>
+    )
+  }
   {
     first.posts.length > 0 ? (
       <PostFeed page={first} />

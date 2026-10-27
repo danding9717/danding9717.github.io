@@ -21,6 +21,16 @@ export const VIEWS = {
   keyPrefix: 'https://danding9717.github.io/posts/',
 };
 
+// 首页文章上方的一行链接，学 Naval 的「Podcast X Apple Spotify …」：前面一个灰色小字，后面是陶土色的链接。
+// links 留空时不显示这一行。
+export const HOME_LINKS = {
+  label: '在别处',
+  links: [
+    { label: 'X', href: 'https://x.com/ethanhu9717' },
+    { label: 'GitHub', href: GITHUB_URL },
+  ],
+};
+
 export const NAV_LINKS = [
   { href: '/archive/', label: '归档' },
   { href: '/about/', label: '关于' },
