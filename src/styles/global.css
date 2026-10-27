@@ -40,6 +40,8 @@ body {
   font-family: var(--font-sans);
   font-kerning: normal;
   line-height: 1.7;
+  /* 中文和英文、数字挨着时自动留一点空隙（「用AI写了3篇」显示成「用 AI 写了 3 篇」），不改动文字本身。不支持的浏览器照旧。 */
+  text-autospace: normal;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   transition:
@@ -72,6 +74,13 @@ a:hover {
   outline-offset: 2px;
 }
 
+/* 代码和按键里不加空隙，保持原样对齐。 */
+pre,
+code,
+kbd {
+  text-autospace: no-autospace;
+}
+
 /* 日期数字用等宽字体。 */
 time {
   font-family: var(--font-mono);
@@ -99,6 +108,9 @@ time {
 
 /* 名字的颜色比其他陶土色强调深一些。 */
 .site-title {
+  /* 手机上好点：透明的内边距放大能点的范围，负外边距抵消掉，看起来和原来一样。下面几处同理。 */
+  padding-block: 12px;
+  margin-block: -12px;
   color: var(--site-title);
   font-family: var(--font-mono);
   font-weight: 700;
@@ -118,6 +130,8 @@ time {
 }
 
 .site-nav a {
+  padding: 12px 6px;
+  margin: -12px -6px;
   color: var(--muted);
   text-decoration: none;
 }
@@ -131,8 +145,8 @@ time {
 .theme-toggle {
   display: inline-flex;
   align-self: center;
-  padding: 0.25rem;
-  margin: -0.25rem;
+  padding: 12px 8px;
+  margin: -12px -8px;
   color: var(--muted);
   background: none;
   border: 0;
@@ -247,6 +261,13 @@ time {
   font-weight: var(--font-strong);
   cursor: pointer;
   transition: color 160ms ease;
+}
+
+/* 「X」这种一个字母的链接也要好点；左右各放大的量小于链接之间的空隙，相邻两个不会重叠。 */
+.home-links a,
+.home-links-qr {
+  padding: 8px 6px;
+  margin: -8px -6px;
 }
 
 /* 浏览器把 popover 放在屏幕正中，这里只管卡片的样子。二维码图片是白底，卡片深色模式下也用白底。 */
@@ -373,10 +394,6 @@ time {
 }
 
 .post-info {
-  margin: 0.6em 0 0;
-}
-
-.post-info {
   margin: 0 0 0.5em;
   color: var(--muted);
   font-size: 0.875em;
@@ -406,6 +423,8 @@ time {
 }
 
 .post-row-title {
+  padding-block: 6px;
+  margin-block: -6px;
   min-width: 0;
   text-decoration: none;
   text-wrap: pretty;
@@ -422,6 +441,11 @@ time {
 .tag-list {
   margin: 0;
   line-height: 1.9;
+}
+
+/* 行内链接的上下内边距不会撑开行高，只放大能点的范围。 */
+.tag-list a {
+  padding-block: 6px;
 }
 
 .tag-count {
@@ -841,6 +865,43 @@ time {
 .prose [data-footnote-ref] {
   padding: 0 0.1em;
   text-decoration: none;
+}
+
+/* ---------- 关于页 ---------- */
+
+/* RSS 地址和「复制」排一行，放不下时按钮整个换到下一行；地址本身比屏幕还宽时才在中间断开。 */
+.rss-address {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25em 0.75em;
+}
+
+.rss-address code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 两个字的「订阅」不拆到两行。 */
+.subscribe-link {
+  white-space: nowrap;
+}
+
+.copy-button {
+  padding: 6px 4px;
+  margin: -6px -4px;
+  color: var(--accent-text);
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 0.875em;
+  font-weight: var(--font-strong);
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.copy-button:hover {
+  color: var(--text);
 }
 
 /* ---------- 归档页搜索 ---------- */

@@ -21,6 +21,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # 文章分享图（/og/<地址>.png）要用中文字体，构建机上默认没有。
+      - name: Install Chinese fonts
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+
       - name: Install, build, and upload
         uses: withastro/action@v6
         with:

@@ -1,6 +1,6 @@
 ---
 import Header from '../components/Header.astro';
-import { AUTHOR_NAME, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { AUTHOR_NAME, OG_IMAGE, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
 import { withBase } from '../utils/paths';
 import '../styles/global.css';
 
@@ -9,14 +9,18 @@ interface Props {
   description?: string;
   type?: 'website' | 'article';
   publishedTime?: Date;
+  /** 分享图（站内路径，1200×630）。不给时用站标，卡片是小图。 */
+  image?: string;
+  /** 放进 <head> 的结构化数据（schema.org），让搜索引擎知道这页是文章、作者是谁。 */
+  jsonLd?: Record<string, unknown>;
 }
 
-const { title = SITE_TITLE, type = 'website', publishedTime } = Astro.props;
+const { title = SITE_TITLE, type = 'website', publishedTime, image, jsonLd } = Astro.props;
 // 摘要是空的（比如文章没写导语、正文第一段也没有字）时用网站介绍。
 const description = Astro.props.description || SITE_DESCRIPTION;
 const pageTitle = title === SITE_TITLE ? SITE_TITLE : `${title} | ${SITE_TITLE}`;
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
-const imageUrl = new URL(withBase('/logo.png'), Astro.site);
+const imageUrl = new URL(withBase(image ?? '/logo.png'), Astro.site);
 ---
 
 <!doctype html>
@@ -35,12 +39,27 @@ const imageUrl = new URL(withBase('/logo.png'), Astro.site);
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonicalUrl} />
     <meta property="og:image" content={imageUrl} />
+    {
+      image && (
+        <>
+          <meta property="og:image:width" content={String(OG_IMAGE.width)} />
+          <meta property="og:image:height" content={String(OG_IMAGE.height)} />
+          <meta property="og:image:alt" content={title} />
+        </>
+      )
+    }
     {publishedTime && (
       <meta property="article:published_time" content={publishedTime.toISOString()} />
     )}
-    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:card" content={image ? 'summary_large_image' : 'summary'} />
     <meta name="twitter:title" content={pageTitle} />
     <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={imageUrl} />
+    {
+      jsonLd && (
+        <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd).replaceAll('<', '\\u003c')} />
+      )
+    }
     <link rel="sitemap" href={withBase('/sitemap-index.xml')} />
     <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#2d2d2b" media="(prefers-color-scheme: dark)" />

@@ -1,10 +1,17 @@
 ---
 import PageHeading from '../components/PageHeading.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { AUTHOR_NAME, GITHUB_URL } from '../consts';
+import { AUTHOR_NAME } from '../consts';
 import { withBase } from '../utils/paths';
 
 const rssUrl = new URL(withBase('/rss.xml'), Astro.site).href;
+// 几个阅读器的「一键订阅」地址：点了直接打开阅读器的订阅页，不用复制粘贴。
+const subscribe = {
+  // Mac 上的 RSS 阅读器认 feed: 开头的地址。
+  netNewsWire: `feed:${rssUrl}`,
+  inoreader: `https://www.inoreader.com/?add_feed=${encodeURIComponent(rssUrl)}`,
+  feedly: `https://feedly.com/i/subscription/${encodeURIComponent(`feed/${rssUrl}`)}`,
+};
 ---
 
 <BaseLayout title="关于" description={`关于 ${AUTHOR_NAME} 和这个博客。`}>
@@ -12,18 +19,45 @@ const rssUrl = new URL(withBase('/rss.xml'), Astro.site).href;
   <article class="prose">
     <h2>我是谁</h2>
     <p>你好，我是 {AUTHOR_NAME}。</p>
-    <p>这里是我的个人博客，用来记录技术、商业、阅读、生活和长期思考。一篇文章只讲一个观点，想清楚了再写下来。</p>
+    <p>这里是我的个人博客，写 AI、财富、生意、读书和产品。一篇文章只讲一个观点，想清楚了再写下来。</p>
 
     <h2>本站</h2>
     <p>文章在终端里用自己写的 <code>myblog</code> 工具写成，由 <a href="https://astro.build/">Astro</a> 生成静态页面，托管在 GitHub Pages 上。配色是暖灰加陶土色，有浅色和深色两套，默认跟随系统，按 <kbd>D</kbd> 键可以切换。</p>
 
     <h2>订阅</h2>
-    <p>RSS 地址：<a href={withBase('/rss.xml')}>{rssUrl}</a></p>
-    <p>RSS 是一种订阅方式：把这个地址加进阅读器，有新文章时会自动出现在里面，不用常回来看。可以试试这几个阅读器：</p>
+    <p>RSS 是一种订阅方式：把下面这个地址加进阅读器，有新文章时会自动出现在里面，不用常回来看。</p>
+    {/* 地址不做成链接：浏览器直接打开 RSS 文件只会显示一堆代码。读者用的是 <head> 里的 rel="alternate"。 */}
+    <p class="rss-address">
+      <code>{rssUrl}</code>
+      <button class="copy-button" type="button" data-copy={rssUrl} hidden>复制</button>
+    </p>
+    <p>用下面几个阅读器的，点「订阅」直接加上：</p>
     <ul>
-      <li><a href="https://netnewswire.com/">NetNewsWire</a>：Mac 和 iPhone，免费开源。</li>
-      <li><a href="https://www.inoreader.com/">Inoreader</a>：网页、安卓和 iPhone 都能用。</li>
-      <li><a href="https://feedly.com/">Feedly</a>：网页和手机都有，登录后粘贴地址就能订阅。</li>
+      <li><a href="https://netnewswire.com/">NetNewsWire</a>：Mac 和 iPhone，免费开源。Mac 上装好后点<a class="subscribe-link" href={subscribe.netNewsWire}>订阅</a>。</li>
+      <li><a href="https://www.inoreader.com/">Inoreader</a>：网页、安卓和 iPhone 都能用，点<a class="subscribe-link" href={subscribe.inoreader}>订阅</a>。</li>
+      <li><a href="https://feedly.com/">Feedly</a>：网页和手机都有，登录后点<a class="subscribe-link" href={subscribe.feedly}>订阅</a>。</li>
     </ul>
   </article>
+
+  <script is:inline>
+    // 「复制」按钮：没开 JS 时不显示，地址照样可以手动选中复制。
+    (() => {
+      const button = document.querySelector('.copy-button');
+      if (!button || !navigator.clipboard) return;
+      button.hidden = false;
+      let timer;
+      button.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(button.dataset.copy);
+          button.textContent = '已复制';
+        } catch {
+          // 浏览器不让写剪贴板时，把地址选中，读者按一下复制就行。
+          getSelection().selectAllChildren(button.previousElementSibling);
+          button.textContent = '已选中';
+        }
+        clearTimeout(timer);
+        timer = setTimeout(() => (button.textContent = '复制'), 2000);
+      });
+    })();
+  </script>
 </BaseLayout>

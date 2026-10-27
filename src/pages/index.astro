@@ -1,15 +1,25 @@
 ---
 import PostFeed from '../components/PostFeed.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { HOME_LINKS, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { AUTHOR_NAME, HOME_LINKS, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
 import { withBase } from '../utils/paths';
 import { getPublishedPosts, paginatePosts } from '../utils/posts';
 
 // 首页学 Naval：最上面一行外部链接，下面最新的 10 篇一篇接一篇，最下面「阅读更多」接着加载。精选和标签在归档页。
 const [first] = paginatePosts(await getPublishedPosts());
+const siteUrl = new URL(withBase('/'), Astro.site).href;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: SITE_TITLE,
+  url: siteUrl,
+  description: SITE_DESCRIPTION,
+  inLanguage: 'zh-CN',
+  author: { '@type': 'Person', name: AUTHOR_NAME, url: new URL(withBase('/about/'), Astro.site).href },
+};
 ---
 
-<BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
+<BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION} jsonLd={jsonLd}>
   {
     HOME_LINKS.links.length > 0 && (
       <div class="home-links">

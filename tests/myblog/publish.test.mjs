@@ -199,7 +199,7 @@ test('构建失败时撤回文章和图片，草稿原样保留', async () => {
       build: async (root) => {
         // 构建的时候文章和图片都已经写好了。
         assert.equal(existsSync(path.join(root, 'src/content/posts/20261014.md')), true);
-        assert.equal(existsSync(path.join(root, 'public/images/20261014/pic.png')), true);
+        assert.equal(existsSync(path.join(root, 'src/content/posts/images/20261014/pic.png')), true);
         throw new BlogError('本地构建没通过，文章没有发出去：', ['some error']);
       },
     }),
@@ -208,7 +208,7 @@ test('构建失败时撤回文章和图片，草稿原样保留', async () => {
 
   assert.equal(await readFile(doc.file, 'utf8'), before);
   assert.equal(existsSync(path.join(blog.root, 'src/content/posts/20261014.md')), false);
-  assert.equal(existsSync(path.join(blog.root, 'public/images/20261014/pic.png')), false);
+  assert.equal(existsSync(path.join(blog.root, 'src/content/posts/images/20261014/pic.png')), false);
   assert.equal(git(blog.root, 'status', '--porcelain'), '');
   assert.equal(git(blog.root, 'rev-list', '--count', 'HEAD'), '1');
 });
@@ -221,9 +221,9 @@ test('图片随文章一起提交', async () => {
   await publish(doc, { root: blog.root, now: NOW, build: okBuild });
   assert.equal(
     git(blog.remote, 'show', '--name-only', '--format=', 'main'),
-    'public/images/20261014/pic.png\nsrc/content/posts/20261014.md',
+    'src/content/posts/20261014.md\nsrc/content/posts/images/20261014/pic.png',
   );
-  assert.match(await readFile(path.join(blog.root, 'src/content/posts/20261014.md'), 'utf8'), /!\[图\]\(\/images\/20261014\/pic\.png\)/);
+  assert.match(await readFile(path.join(blog.root, 'src/content/posts/20261014.md'), 'utf8'), /!\[图\]\(\.\/images\/20261014\/pic\.png\)/);
 });
 
 test('发布前先拿到 GitHub 上别处推送的提交', async () => {

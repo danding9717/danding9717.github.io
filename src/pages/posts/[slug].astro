@@ -5,8 +5,11 @@ import PostRow from '../../components/PostRow.astro';
 import TagList from '../../components/TagList.astro';
 import ViewCount from '../../components/ViewCount.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
+import { AUTHOR_NAME } from '../../consts';
+import { withBase } from '../../utils/paths';
 import {
   descriptionRepeatsBody,
+  fillWithLatest,
   formatDate,
   getBacklinks,
   getExcerpt,
@@ -21,36 +24,64 @@ export async function getStaticPaths() {
   const posts = await getPublishedPosts();
   const backlinks = getBacklinks(posts);
 
-  return posts.map((post) => ({
-    params: { slug: post.id },
-    props: {
-      post,
-      backlinks: backlinks.get(post.id) ?? [],
-      related: getRelatedPosts(post, posts),
-    },
-  }));
+  return posts.map((post) => {
+    const related = getRelatedPosts(post, posts);
+    return {
+      params: { slug: post.id },
+      props: {
+        post,
+        backlinks: backlinks.get(post.id) ?? [],
+        related,
+        more: fillWithLatest(post, related, posts),
+      },
+    };
+  });
 }
 
 interface Props {
   post: Post;
   backlinks: Post[];
+  /** 有共同标签的文章。 */
   related: Post[];
+  /** related 不够 3 篇时用最新文章补齐。 */
+  more: Post[];
 }
 
-const { post, backlinks, related } = Astro.props;
+const { post, backlinks, related, more } = Astro.props;
+// 全是同标签的文章时叫「相关文章」，补了最新文章就叫「更多文章」。
+const moreTitle = more.length === related.length ? '相关文章' : '更多文章';
 const { Content, headings } = await render(post);
 // 只有二级标题达到 4 个的长文（通常是合集）才在正文上方放目录。
 const sections = headings.filter((heading) => heading.depth === 2);
 const showToc = sections.length >= 4;
 const showSubtitle = !descriptionRepeatsBody(post);
 const tags = [...new Set(post.data.tags)];
+const description = post.data.description || getExcerpt(post);
+const image = `/og/${post.id}.png`;
+const absolute = (pathname: string) => new URL(withBase(pathname), Astro.site).href;
+const url = new URL(getPostUrl(post), Astro.site).href;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: post.data.title,
+  description,
+  datePublished: post.data.date.toISOString(),
+  inLanguage: 'zh-CN',
+  url,
+  mainEntityOfPage: url,
+  image: absolute(image),
+  author: { '@type': 'Person', name: AUTHOR_NAME, url: absolute('/about/') },
+  ...(tags.length > 0 && { keywords: tags.join(', ') }),
+};
 ---
 
 <BaseLayout
   title={post.data.title}
-  description={post.data.description || getExcerpt(post)}
+  description={description}
   type="article"
   publishedTime={post.data.date}
+  image={image}
+  jsonLd={jsonLd}
 >
   <article class="post" data-pagefind-body>
     <header class="post-header">
@@ -100,11 +131,11 @@ const tags = [...new Set(post.data.tags)];
     }
 
     {
-      related.length > 0 && (
+      more.length > 0 && (
         <section class="post-section" aria-labelledby="related-title">
-          <h2 class="section-title" id="related-title">相关文章</h2>
+          <h2 class="section-title" id="related-title">{moreTitle}</h2>
           <ol class="post-rows">
-            {related.map((item) => (
+            {more.map((item) => (
               <PostRow post={item} />
             ))}
           </ol>

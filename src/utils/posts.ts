@@ -144,6 +144,15 @@ export function getRelatedPosts(post: Post, posts: Post[], limit = 3) {
   return picked;
 }
 
+/**
+ * 文末的推荐不够 limit 篇时，用最新的文章补上（不含这篇和已经列出的），读完总有下一篇可点。
+ * posts 已经按时间从新到旧排好。
+ */
+export function fillWithLatest(post: Post, picked: Post[], posts: Post[], limit = 3) {
+  const latest = posts.filter((candidate) => candidate.id !== post.id && !picked.includes(candidate));
+  return [...picked, ...latest].slice(0, limit);
+}
+
 /** 正文里指向 /posts/<id>/ 的站内链接。 */
 const POST_LINK_PATTERN =
   /(?:\]\(|href=["'])(?:https?:\/\/ethanhu9717\.github\.io)?\/posts\/([^/)"'#?\s]+)\/?/g;
