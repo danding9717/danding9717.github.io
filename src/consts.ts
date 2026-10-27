@@ -21,6 +21,19 @@ export const VIEWS = {
   keyPrefix: 'https://danding9717.github.io/posts/',
 };
 
+// 首页文章上方的一行链接，学 Naval 的「Podcast X Apple Spotify …」：前面一个灰色小字，后面是陶土色的链接。
+// 没有网页地址的（比如视频号）写 qr：点了弹出这张二维码图片，图片放在 public/ 下。links 留空时不显示这一行。
+export const HOME_LINKS = {
+  label: 'Links',
+  links: [
+    { label: 'X', href: 'https://x.com/ethanhu9717' },
+    // 抖音「Space航天」的主页。用 douyin.com/user/ 的固定地址，不用分享短链（短链会带上手机的设备编号）。
+    { label: '抖音', href: 'https://www.douyin.com/user/MS4wLjABAAAAi2ArmZulMTaPMHXZdHdeuSapMJFqAmUSoPaFuqpmyuI' },
+    { label: '视频号', qr: '/images/space-channels-qr.jpg', alt: '视频号「Space航天」的二维码' },
+    { label: 'GitHub', href: GITHUB_URL },
+  ],
+};
+
 export const NAV_LINKS = [
   { href: '/archive/', label: '归档' },
   { href: '/about/', label: '关于' },

@@ -1,14 +1,38 @@
 ---
 import PostFeed from '../components/PostFeed.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { HOME_LINKS, SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { withBase } from '../utils/paths';
 import { getPublishedPosts, paginatePosts } from '../utils/posts';
 
-// 首页学 Naval：最新的 10 篇一篇接一篇，最下面「阅读更多」接着加载。精选和标签在归档页。
+// 首页学 Naval：最上面一行外部链接，下面最新的 10 篇一篇接一篇，最下面「阅读更多」接着加载。精选和标签在归档页。
 const [first] = paginatePosts(await getPublishedPosts());
 ---
 
 <BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
+  {
+    HOME_LINKS.links.length > 0 && (
+      <div class="home-links">
+        <span class="home-links-label">{HOME_LINKS.label}</span>
+        {HOME_LINKS.links.map((link, index) =>
+          'qr' in link ? (
+            <>
+              {/* 二维码用浏览器自带的 popover：不用写脚本，点外面或按 Esc 关掉。 */}
+              <button class="home-links-qr" type="button" popovertarget={`home-qr-${index}`}>
+                {link.label}
+              </button>
+              <div class="qr-popover" id={`home-qr-${index}`} popover>
+                <img src={withBase(link.qr)} alt={link.alt} width="600" height="870" loading="lazy" />
+                <p class="qr-popover-hint">手机上：长按保存图片，再用微信扫一扫从相册识别。</p>
+              </div>
+            </>
+          ) : (
+            <a href={link.href}>{link.label}</a>
+          ),
+        )}
+      </div>
+    )
+  }
   {
     first.posts.length > 0 ? (
       <PostFeed page={first} />
