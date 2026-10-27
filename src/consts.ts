@@ -1,8 +1,11 @@
 export const SITE_TITLE = 'Ethan Hu';
-export const SITE_DESCRIPTION =
-  'A quiet personal blog for technology, business, reading, life, and long-term thinking.';
 export const AUTHOR_NAME = 'Ethan Hu';
+// 首页在搜索结果和分享卡片里的介绍，也是 RSS 的介绍。
+export const SITE_DESCRIPTION = `${AUTHOR_NAME} 的个人博客，写 AI、财富、生意、读书和产品，一篇只讲一个观点。`;
 export const GITHUB_URL = 'https://github.com/ethanhu9717';
+
+// 文章分享图（构建时生成在 /og/<地址>.png）的尺寸，X、微博、Telegram 等认的大图比例。
+export const OG_IMAGE = { width: 1200, height: 630 };
 
 // 文章末尾的评论区（giscus）：评论存在本仓库的 GitHub Discussions 里，读者用 GitHub 账号登录后评论。
 // 这几个值来自 https://giscus.app/zh-CN 的配置页。categoryId 留空时不显示评论区。

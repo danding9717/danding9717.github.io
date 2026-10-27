@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { after, test } from 'node:test';
@@ -20,6 +20,7 @@ import {
   outsideEditor,
   parseTags,
   planImages,
+  copyImage,
   preparePost,
   readFields,
   rewriteLinks,
@@ -358,9 +359,9 @@ test('只改正文，跳过代码块和行内代码', () => {
   assert.equal(mapProse(text, (prose) => prose.replaceAll('a', 'b')), 'b\n```js\na\n```\n`a` b\n~~~\na\n~~~');
 });
 
-test('本地图片复制到 public/images/<地址>/，路径改好', async () => {
+test('本地图片复制到文章旁边的 images/<地址>/，路径改成相对文章的', async () => {
   const drafts = path.join(temp, 'drafts');
-  const images = path.join(temp, 'images', '20261014');
+  const images = path.join(temp, 'posts', 'images', '20261014');
   await mkdir(drafts, { recursive: true });
   await writeFile(path.join(drafts, 'pic.png'), 'png');
   await writeFile(path.join(drafts, 'My Pic.JPG'), 'jpg');
@@ -378,22 +379,54 @@ test('本地图片复制到 public/images/<地址>/，路径改好', async () =>
   assert.deepEqual(
     result.copies.map((copy) => [path.basename(copy.from), path.relative(temp, copy.to)]),
     [
-      ['pic.png', 'images/20261014/pic.png'],
-      ['My Pic.JPG', 'images/20261014/my-pic.jpg'],
+      ['pic.png', 'posts/images/20261014/pic.png'],
+      ['My Pic.JPG', 'posts/images/20261014/my-pic.jpg'],
     ],
   );
   assert.equal(
     result.body,
     [
-      '![a](/images/20261014/pic.png)',
-      '![b](/images/20261014/my-pic.jpg "说明")',
+      '![a](./images/20261014/pic.png)',
+      '![b](./images/20261014/my-pic.jpg "说明")',
       '![c](https://example.com/c.png)',
       '![d](/images/old/d.png)',
       '![e](missing.png)',
-      '![f](/images/20261014/pic.png)',
+      '![f](./images/20261014/pic.png)',
       '`![g](pic.png)`',
     ].join('\n'),
   );
+});
+
+test('更新已发布的文章：已经在图片文件夹里的图片不再复制', async () => {
+  const posts = path.join(temp, 'posts');
+  const images = path.join(posts, 'images', '20261014');
+  await mkdir(images, { recursive: true });
+  await writeFile(path.join(images, 'pic.png'), 'png');
+  await writeFile(path.join(posts, 'images', 'other.png'), 'png');
+  const body = '![a](./images/20261014/pic.png)\n![b](images/other.png)';
+  const result = await planImages(body, { id: '20261014', baseDir: posts, imagesDir: images });
+  assert.deepEqual(result.problems, []);
+  assert.deepEqual(result.copies, []);
+  assert.equal(result.body, '![a](./images/20261014/pic.png)\n![b](./images/other.png)');
+});
+
+test('照片转正、缩到 1600 像素宽、去掉 EXIF；读不了的原样复制', async () => {
+  const { default: sharp } = await import('sharp');
+  const photo = path.join(temp, 'photo.jpg');
+  // 横着存、EXIF 里写着要转 90 度的照片，就像手机竖着拍的。
+  await sharp({ create: { width: 4000, height: 3000, channels: 3, background: '#c87d5e' } })
+    .jpeg()
+    .withMetadata({ orientation: 6 })
+    .toFile(photo);
+  const out = path.join(temp, 'photo-out.jpg');
+  await copyImage(photo, out);
+  const meta = await sharp(out).metadata();
+  assert.deepEqual([meta.width, meta.height, meta.orientation, Boolean(meta.exif)], [1600, 2133, undefined, false]);
+
+  const broken = path.join(temp, 'broken.png');
+  await writeFile(broken, 'not a png');
+  await copyImage(broken, path.join(temp, 'broken-out.png'));
+  assert.equal(await readFile(path.join(temp, 'broken-out.png'), 'utf8'), 'not a png');
 });
 
 test('拖进终端的图片路径', async () => {

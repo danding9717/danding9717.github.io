@@ -16,6 +16,8 @@ export const FEATURED = '精选';
 const TIME_ZONE = 'Asia/Shanghai';
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const IMAGE_EXTENSIONS = /\.(avif|gif|jpe?g|png|svg|webp)$/i;
+/** 复制进来的照片最宽 1600 像素：正文栏约 740 像素宽，高清屏上也够用。 */
+const IMAGE_MAX_WIDTH = 1600;
 
 export class BlogError extends Error {
   /** problems 是逐条的原因，界面会一条一行列出来。 */
@@ -31,7 +33,8 @@ export function blogPaths(root = ROOT) {
     root,
     drafts: path.join(root, 'src/content/drafts'),
     posts: path.join(root, 'src/content/posts'),
-    images: path.join(root, 'public/images'),
+    // 文章里的图片放在文章旁边，构建时 Astro 把它们压缩成 WebP，加上宽高，滑到附近才加载。
+    images: path.join(root, 'src/content/posts/images'),
   };
 }
 
@@ -538,9 +541,14 @@ const IMAGE = /!\[([^\]\n]*)\]\(\s*(<[^>\n]+>|[^)\s]+)((?:\s+"[^"\n]*")?)\s*\)/g
 
 /**
  * 找出正文里引用的本地图片（绝对路径、~/ 开头，或相对草稿文件夹的路径），
- * 计划复制到 public/images/<地址>/，返回替换后的正文。网络图片和 /images/ 开头的不动。
+ * 计划复制到 src/content/posts/images/<地址>/，正文里改成相对文章的 ./images/<地址>/文件名。
+ * 已经在图片文件夹里的（比如更新已发布的文章）不再复制。网络图片和 /images/ 开头的（以前放在 public/ 下的）不动。
  */
-export async function planImages(body, { id, baseDir, imagesDir }) {
+export async function planImages(body, { baseDir, imagesDir }) {
+  const imagesRoot = path.dirname(imagesDir);
+  const postsDir = path.dirname(imagesRoot);
+  const fromPost = (file) => `./${path.relative(postsDir, file).split(path.sep).join('/')}`;
+
   const targets = [];
   mapProse(body, (prose) => {
     for (const match of prose.matchAll(IMAGE)) targets.push(match[2]);
@@ -560,11 +568,16 @@ export async function planImages(body, { id, baseDir, imagesDir }) {
       problems.push(`找不到图片：${target}`);
       continue;
     }
+    const inImages = path.relative(imagesRoot, source);
+    if (!inImages.startsWith('..') && !path.isAbsolute(inImages)) {
+      replacements.set(raw, fromPost(source));
+      continue;
+    }
     const existing = copies.find((copy) => copy.from === source);
     const name = existing ? path.basename(existing.to) : uniqueImageName(source, imagesDir, usedNames);
     usedNames.add(name);
     if (!existing) copies.push({ from: source, to: path.join(imagesDir, name) });
-    replacements.set(raw, `/images/${id}/${name}`);
+    replacements.set(raw, fromPost(path.join(imagesDir, name)));
   }
 
   const output = mapProse(body, (prose) =>
@@ -610,6 +623,27 @@ function uniqueImageName(source, imagesDir, usedNames) {
     name = `${base}-${n}${extension}`;
   }
   return name;
+}
+
+/**
+ * 复制一张图片。照片顺手处理一下再放进来：按拍摄方向转正，太宽的缩到 IMAGE_MAX_WIDTH，
+ * 去掉 EXIF（里面可能有拍摄地点，仓库是公开的）。sharp 是 Astro 处理图片用的库；用不了时原样复制。
+ */
+export async function copyImage(from, to) {
+  if (/\.(jpe?g|png)$/i.test(from)) {
+    try {
+      const { default: sharp } = await import('sharp');
+      await sharp(from, { failOn: 'error' })
+        .rotate()
+        .resize({ width: IMAGE_MAX_WIDTH, withoutEnlargement: true })
+        .jpeg({ quality: 90, mozjpeg: true, force: false })
+        .toFile(to);
+      return;
+    } catch {
+      // 读不了的图片原样复制，构建时会报出来。
+    }
+  }
+  await copyFile(from, to);
 }
 
 /** 拖进终端的文件路径：去掉引号和反斜杠转义，是图片就返回路径。 */
@@ -675,7 +709,7 @@ export async function publish(doc, { root = ROOT, build = buildSite, onStep = ()
   try {
     for (const copy of images.copies) {
       await mkdir(path.dirname(copy.to), { recursive: true });
-      await copyFile(copy.from, copy.to);
+      await copyImage(copy.from, copy.to);
       written.push(copy.to);
     }
     await mkdir(dirs.posts, { recursive: true });
