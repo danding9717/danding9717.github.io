@@ -2,16 +2,18 @@
 import PageHeading from '../components/PageHeading.astro';
 import PostIndex from '../components/PostIndex.astro';
 import PostRow from '../components/PostRow.astro';
+import TagList from '../components/TagList.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import { getFeaturedPosts, getPublishedPosts } from '../utils/posts';
+import { getFeaturedPosts, getPublishedPosts, getTags } from '../utils/posts';
 import { withBase } from '../utils/paths';
 
 const posts = await getPublishedPosts();
 const featured = getFeaturedPosts(posts);
+const tags = getTags(posts);
 const pagefindBase = withBase('/pagefind/');
 ---
 
-<BaseLayout title="归档" description="全部文章，按年份排列，也可以全文搜索。">
+<BaseLayout title="归档" description="全部文章，按年份排列，也可以按标签浏览或全文搜索。">
   <PageHeading title="归档" />
 
   {/* 学 Naval 的归档页：标题下一条带放大镜的下划线输入框；有输入时用搜索结果替换下面的列表。 */}
@@ -39,13 +41,19 @@ const pagefindBase = withBase('/pagefind/');
       ) : (
         <>
           {featured.length > 0 && (
-            <section class="home-section" aria-labelledby="archive-featured">
+            <section class="page-section" aria-labelledby="archive-featured">
               <h2 class="section-title" id="archive-featured">精选</h2>
               <ol class="post-rows">
                 {featured.map((post) => (
                   <PostRow post={post} />
                 ))}
               </ol>
+            </section>
+          )}
+          {tags.length > 0 && (
+            <section class="page-section" aria-labelledby="archive-tags">
+              <h2 class="section-title" id="archive-tags">标签</h2>
+              <TagList tags={tags} />
             </section>
           )}
           <PostIndex posts={posts} />

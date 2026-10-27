@@ -1,0 +1,60 @@
+---
+import PostEntry from './PostEntry.astro';
+import type { PostPage } from '../utils/posts';
+
+interface Props {
+  page: PostPage;
+}
+
+const { page } = Astro.props;
+---
+
+<ol class="post-entries">
+  {page.posts.map((post) => <PostEntry post={post} />)}
+</ol>
+
+{
+  page.next && (
+    <>
+      <a class="load-more" href={page.next}>阅读更多</a>
+      <script is:inline>
+        // 学 Naval 的「Read More」：点了把下一批文章接在列表后面，不换页。
+        // 下一批是事先生成好的 /page/N/；没开 JS 或取不到时，就直接打开那一页。
+        (() => {
+          const list = document.querySelector('.post-entries');
+          const more = document.querySelector('.load-more');
+
+          more.addEventListener('click', async (event) => {
+            // 按着 Cmd、Ctrl、Shift 点时照常在新标签页或新窗口打开。
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            if (more.getAttribute('aria-busy') === 'true') return;
+
+            const label = more.textContent;
+            more.setAttribute('aria-busy', 'true');
+            more.textContent = '加载中…';
+            try {
+              const response = await fetch(more.href);
+              if (!response.ok) throw new Error(String(response.status));
+              const page = new DOMParser().parseFromString(await response.text(), 'text/html');
+              const entries = [...page.querySelectorAll('.post-entries > li')];
+              const next = page.querySelector('.load-more');
+              list.append(...entries);
+              if (next) {
+                more.href = next.getAttribute('href');
+                more.textContent = label;
+                more.removeAttribute('aria-busy');
+              } else {
+                more.remove();
+              }
+              // 焦点移到新出来的第一篇，用键盘的读者接着往下读；页面不跟着跳。
+              entries[0]?.querySelector('a')?.focus({ preventScroll: true });
+            } catch {
+              location.href = more.href;
+            }
+          });
+        })();
+      </script>
+    </>
+  )
+}

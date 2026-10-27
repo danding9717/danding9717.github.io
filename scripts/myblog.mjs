@@ -75,7 +75,7 @@ const STEPS = [...PUBLISH_STEPS, ['live', '等待网站更新']];
 const FORM_FIELDS = {
   title: { label: '标题', hint: '可选：一句话说出这篇的观点。不写就用日期，同一天第二篇加 -2。' },
   description: { label: '导语', hint: '可选：一句话，显示在标题下面，也是首页和 RSS 的摘要。', placeholder: '可以不写' },
-  tags: { label: '标签', hint: `←→ 挑，空格选中或取消，直接打字新建。「${FEATURED}」会放进首页精选。` },
+  tags: { label: '标签', hint: `←→ 挑，空格选中或取消，直接打字新建。「${FEATURED}」会放进归档页的精选。` },
   slug: { label: '网址', hint: '可选：文章链接的最后一段，填 compound 就是 /posts/compound/，发布后不能改。' },
   date: { label: '时间', hint: '发布时间，写成 2026-10-14 或 2026-10-14 21:30；删掉就用发布那一刻。', placeholder: '发布那一刻' },
   submit: { hint: '会先检查一遍，有问题列在下面，不会发出去。' },
