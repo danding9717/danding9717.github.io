@@ -56,9 +56,6 @@ const tags = [...new Set(post.data.tags)];
     <header class="post-header">
       <p class="post-info" data-pagefind-ignore>
         <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time>
-        <span aria-hidden="true"> · </span>
-        <span>{getReadingMinutes(post)} 分钟阅读</span>
-        <ViewCount slug={post.id} />
       </p>
       <h1 data-pagefind-meta="title">{post.data.title}</h1>
       {showSubtitle && <p class="post-subtitle">{post.data.description}</p>}
@@ -116,6 +113,12 @@ const tags = [...new Set(post.data.tags)];
     }
 
     {tags.length > 0 && <TagList tags={tags} label="标签：" />}
+
+    {/* 阅读时长和浏览量放在文末，标题上方只留日期，让标题更突出。 */}
+    <p class="post-info">
+      <span>{getReadingMinutes(post)} 分钟阅读</span>
+      <ViewCount slug={post.id} />
+    </p>
 
     <Comments term={post.id} />
   </footer>
