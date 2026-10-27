@@ -226,14 +226,65 @@ time {
   color: var(--muted);
 }
 
-.home-links a {
+.home-links a,
+.home-links-qr {
   color: var(--accent-text);
   font-weight: var(--font-strong);
   text-decoration: none;
 }
 
-.home-links a:hover {
+.home-links a:hover,
+.home-links-qr:hover {
   color: var(--text);
+}
+
+/* 视频号这类没有网页的：看起来和旁边的链接一样，点了弹出二维码。 */
+.home-links-qr {
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-weight: var(--font-strong);
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+/* 浏览器把 popover 放在屏幕正中，这里只管卡片的样子。二维码图片是白底，卡片深色模式下也用白底。 */
+.qr-popover {
+  width: min(17rem, 100% - var(--gutter) * 2);
+  padding: 0;
+  overflow: hidden;
+  background: #fff;
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 22%);
+}
+
+.qr-popover::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+
+.qr-popover img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* 在手机上扫不了自己屏幕上的码，才需要这句提示。 */
+.qr-popover-hint {
+  display: none;
+  margin: 0;
+  padding: 0 1rem 1rem;
+  color: #6b6b67;
+  font-size: 0.8125em;
+  line-height: 1.5;
+  text-align: center;
+}
+
+@media (hover: none) {
+  .qr-popover-hint {
+    display: block;
+  }
 }
 
 /* 首页学 Naval：一篇接一篇，每篇不加框，靠大标题撑起层级；整块是一个链接。 */
