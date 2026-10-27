@@ -1,0 +1,19 @@
+---
+import PostFeed from '../../components/PostFeed.astro';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getPublishedPosts, paginatePosts, type PostPage } from '../../utils/posts';
+
+// 首页之后的每一批文章。首页的「阅读更多」从这里取下一批接在后面；没开 JS 时就是普通的下一页。
+export async function getStaticPaths() {
+  return paginatePosts(await getPublishedPosts())
+    .slice(1)
+    .map((page) => ({ params: { page: String(page.page) }, props: { page } }));
+}
+
+const { page } = Astro.props as { page: PostPage };
+---
+
+<BaseLayout title={`第 ${page.page} 页`}>
+  <h1 class="section-title feed-page">第 {page.page} 页</h1>
+  <PostFeed page={page} />
+</BaseLayout>

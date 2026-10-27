@@ -1,0 +1,27 @@
+---
+import type { Post } from '../utils/posts';
+import { formatDate, getExcerpt, getPostUrl, getReadingMinutes } from '../utils/posts';
+
+interface Props {
+  post: Post;
+}
+
+const { post } = Astro.props;
+// 没写导语时用正文第一段。
+const summary = post.data.description || getExcerpt(post);
+---
+
+<li class="post-entry">
+  <a class="post-entry-link" href={getPostUrl(post)}>
+    <h2 class="post-entry-title">{post.data.title}</h2>
+    <p class="post-entry-lede">
+      {summary && <span class="post-entry-desc">{summary}</span>}
+      <span class="post-entry-more">继续阅读<span aria-hidden="true">&nbsp;&rsaquo;</span></span>
+    </p>
+    <p class="post-info">
+      <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time>{' '}
+      <span aria-hidden="true">·</span>{' '}
+      <span>{getReadingMinutes(post)} 分钟阅读</span>
+    </p>
+  </a>
+</li>

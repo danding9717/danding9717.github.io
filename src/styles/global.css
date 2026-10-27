@@ -204,36 +204,46 @@ time {
 
 /* ---------- 首页 ---------- */
 
-.home-section {
+.page-section {
   margin: 0 0 3rem;
 }
 
-.home-section:last-child {
+.page-section:last-child {
   margin-bottom: 0;
 }
 
-/* 「最新」学 Naval 的条目：不加框，靠大标题撑起层级；整块仍是一个链接。 */
-.featured-post {
+/* 首页学 Naval：一篇接一篇，每篇不加框，靠大标题撑起层级；整块是一个链接。 */
+.post-entries {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.post-entry + .post-entry {
+  margin-top: 3rem;
+}
+
+.post-entry-link {
   display: block;
   color: var(--text);
   text-decoration: none;
 }
 
-.featured-post:hover {
+.post-entry-link:hover {
   color: var(--text);
 }
 
-.featured-post:hover .featured-title {
+.post-entry-link:hover .post-entry-title {
   color: var(--accent-text);
 }
 
 /* 没有框，焦点框往外让一点，别贴着字。 */
-.featured-post:focus-visible {
+.post-entry-link:focus-visible {
   outline-offset: 0.375rem;
   border-radius: var(--radius);
 }
 
-.featured-title {
+.post-entry-title {
   margin: 0;
   font-size: 1.4em;
   font-weight: var(--font-strong);
@@ -242,24 +252,52 @@ time {
   transition: color 160ms ease;
 }
 
-.featured-lede {
+.post-entry-lede {
   margin: 0.4em 0 0;
   color: var(--secondary);
   text-wrap: pretty;
 }
 
 /* 跟在摘要末尾的小字，像 Naval 的「More ›」。没有摘要时不留空。 */
-.featured-desc {
+.post-entry-desc {
   margin-right: 0.25em;
 }
 
-.featured-more {
+.post-entry-more {
   color: var(--muted);
   font-size: 0.875em;
   white-space: nowrap;
 }
 
-.featured-post .post-info {
+.post-entry .post-info {
+  margin: 0.6em 0 0;
+}
+
+/* 列表最下面的「阅读更多」，像 Naval 的「Read More」：一行陶土色的粗字。 */
+.load-more {
+  display: inline-block;
+  margin-top: 3rem;
+  color: var(--accent-text);
+  font-size: 1.125em;
+  font-weight: var(--font-strong);
+  text-decoration: none;
+}
+
+.load-more:hover {
+  color: var(--text);
+}
+
+.load-more[aria-busy="true"] {
+  color: var(--muted);
+  cursor: progress;
+}
+
+/* /page/2/ 这类页面顶上的「第 N 页」。 */
+.feed-page {
+  margin-bottom: 1.5rem;
+}
+
+.post-info {
   margin: 0.6em 0 0;
 }
 

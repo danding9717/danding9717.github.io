@@ -9,7 +9,7 @@ export interface Tag {
   posts: Post[];
 }
 
-/** 挂上这个标签的文章会出现在首页「精选」里。 */
+/** 挂上这个标签的文章会出现在归档页「精选」里。 */
 export const FEATURED_TAG = '精选';
 const FEATURED_MIN = 3;
 const FEATURED_MAX = 5;
@@ -85,6 +85,26 @@ export function getTags(posts: Post[]) {
 export function getFeaturedPosts(posts: Post[]) {
   const featured = posts.filter((post) => post.data.tags.includes(FEATURED_TAG));
   return featured.length >= FEATURED_MIN ? featured.slice(0, FEATURED_MAX) : [];
+}
+
+/** 首页显示的篇数，也是点一次「阅读更多」多出来的篇数。 */
+export const PAGE_SIZE = 10;
+
+export interface PostPage {
+  page: number;
+  posts: Post[];
+  /** 下一批的网址；后面没有文章时不填。 */
+  next?: string;
+}
+
+/** 文章按 PAGE_SIZE 一批：第 1 批在首页，之后依次是 /page/2/、/page/3/……一篇都没有时也返回空的第 1 批。 */
+export function paginatePosts(posts: Post[]): PostPage[] {
+  const count = Math.max(1, Math.ceil(posts.length / PAGE_SIZE));
+  return Array.from({ length: count }, (_, index) => ({
+    page: index + 1,
+    posts: posts.slice(index * PAGE_SIZE, (index + 1) * PAGE_SIZE),
+    next: index + 1 < count ? withBase(`/page/${index + 2}/`) : undefined,
+  }));
 }
 
 export function getReadingMinutes(post: Post) {

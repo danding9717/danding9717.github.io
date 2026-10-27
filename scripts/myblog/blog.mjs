@@ -11,7 +11,7 @@ import { SITE_URL } from '../../site.config.mjs';
 export const ROOT = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 /** 发布页上默认列出的标签；别的标签在发布页上直接新建，用过的以后也会列出来。 */
 export const TAGS = ['AI', '财富', '生意', '读书', '产品'];
-/** 挂上这个标签的文章会出现在首页「精选」里（和 src/utils/posts.ts 的 FEATURED_TAG 一致）。 */
+/** 挂上这个标签的文章会出现在归档页「精选」里（和 src/utils/posts.ts 的 FEATURED_TAG 一致）。 */
 export const FEATURED = '精选';
 const TIME_ZONE = 'Asia/Shanghai';
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

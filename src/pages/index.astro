@@ -1,64 +1,17 @@
 ---
-import PostRow from '../components/PostRow.astro';
-import TagList from '../components/TagList.astro';
+import PostFeed from '../components/PostFeed.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
-import {
-  formatDate,
-  getExcerpt,
-  getFeaturedPosts,
-  getPostUrl,
-  getPublishedPosts,
-  getReadingMinutes,
-  getTags,
-} from '../utils/posts';
+import { getPublishedPosts, paginatePosts } from '../utils/posts';
 
-const posts = await getPublishedPosts();
-const [latest] = posts;
-// 没写导语时用正文第一段。
-const summary = latest && (latest.data.description || getExcerpt(latest));
-const featured = getFeaturedPosts(posts);
-const tags = getTags(posts);
+// 首页学 Naval：最新的 10 篇一篇接一篇，最下面「阅读更多」接着加载。精选和标签在归档页。
+const [first] = paginatePosts(await getPublishedPosts());
 ---
 
 <BaseLayout title={SITE_TITLE} description={SITE_DESCRIPTION}>
   {
-    latest ? (
-      <>
-        <section class="home-section" aria-labelledby="home-latest">
-          <h2 class="section-title" id="home-latest">最新</h2>
-          <a class="featured-post" href={getPostUrl(latest)}>
-            <h3 class="featured-title">{latest.data.title}</h3>
-            <p class="featured-lede">
-              {summary && <span class="featured-desc">{summary}</span>}
-              <span class="featured-more">继续阅读<span aria-hidden="true">&nbsp;&rsaquo;</span></span>
-            </p>
-            <p class="post-info">
-              <time datetime={latest.data.date.toISOString()}>{formatDate(latest.data.date)}</time>{' '}
-              <span aria-hidden="true">·</span>{' '}
-              <span>{getReadingMinutes(latest)} 分钟阅读</span>
-            </p>
-          </a>
-        </section>
-
-        {featured.length > 0 && (
-          <section class="home-section" aria-labelledby="home-featured">
-            <h2 class="section-title" id="home-featured">精选</h2>
-            <ol class="post-rows">
-              {featured.map((post) => (
-                <PostRow post={post} />
-              ))}
-            </ol>
-          </section>
-        )}
-
-        {tags.length > 0 && (
-          <section class="home-section" aria-labelledby="home-tags">
-            <h2 class="section-title" id="home-tags">标签</h2>
-            <TagList tags={tags} />
-          </section>
-        )}
-      </>
+    first.posts.length > 0 ? (
+      <PostFeed page={first} />
     ) : (
       <p class="empty-state">还没有发布文章，第一篇正在路上。</p>
     )
