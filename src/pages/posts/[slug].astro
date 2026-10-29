@@ -5,7 +5,7 @@ import PostRow from '../../components/PostRow.astro';
 import TagList from '../../components/TagList.astro';
 import ViewCount from '../../components/ViewCount.astro';
 import BaseLayout from '../../layouts/BaseLayout.astro';
-import { AUTHOR_NAME } from '../../consts';
+import { AUTHOR_NAME, GISCUS } from '../../consts';
 import { withBase } from '../../utils/paths';
 import {
   descriptionRepeatsBody,
@@ -83,6 +83,16 @@ const jsonLd = {
   image={image}
   jsonLd={jsonLd}
 >
+  {
+    // 一进页面就和 giscus 的服务器连上线（查地址、握手），轮到评论区加载时省掉这一步。
+    // 两条都要：评论脚本按跨域方式取，iframe 页面不是，浏览器给它们分开建连接。
+    GISCUS.categoryId && (
+      <Fragment slot="head">
+        <link rel="preconnect" href={GISCUS.origin} />
+        <link rel="preconnect" href={GISCUS.origin} crossorigin />
+      </Fragment>
+    )
+  }
   <article class="post" data-pagefind-body>
     <header class="post-header">
       <p class="post-info" data-pagefind-ignore>

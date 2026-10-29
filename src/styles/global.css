@@ -577,9 +577,26 @@ time {
 }
 
 /* 评论区（giscus）。iframe 里的配色和评论框样式在 public/giscus/，跟着页面的浅色、深色切换。
-   登录 GitHub 回来时页面会跳到评论框，让上面的「评论」标题也露出来。 */
+   登录 GitHub 回来时页面会跳到评论框，让上面的「评论」标题也露出来。
+   150px 是 giscus 给 iframe 的最小高度，提前把位置占好。 */
+.comments-frame {
+  position: relative;
+}
+
 .comments .giscus {
+  min-height: 150px;
   scroll-margin-top: 2.5rem;
+}
+
+/* iframe 出来之前的「正在加载评论……」，叠在 iframe 里 giscus 自己那行加载字的位置上，换过去看不出来。
+   iframe 里的字不跟着本站字号放大，所以这里也写死 14px。 */
+.comments-status {
+  position: absolute;
+  inset: 0 0 auto;
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 20px;
 }
 
 /* ---------- 正文排版 ---------- */
