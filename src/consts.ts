@@ -9,7 +9,9 @@ export const OG_IMAGE = { width: 1200, height: 630 };
 
 // 文章末尾的评论区（giscus）：评论存在本仓库的 GitHub Discussions 里，读者用 GitHub 账号登录后评论。
 // 这几个值来自 https://giscus.app/zh-CN 的配置页。categoryId 留空时不显示评论区。
+// origin 是 giscus 的服务器，文章页一打开就先和它连上线，评论能早点出来。
 export const GISCUS = {
+  origin: 'https://giscus.app',
   repo: 'ethanhu9717/ethanhu9717.github.io',
   repoId: 'R_kgDOSrN57g',
   category: 'Announcements',

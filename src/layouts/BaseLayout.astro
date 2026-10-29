@@ -115,6 +115,8 @@ const imageUrl = new URL(withBase(image ?? '/logo.png'), Astro.site);
       title={SITE_TITLE}
       href={withBase('/rss.xml')}
     />
+    {/* 个别页面自己要加的，比如文章页提前连上评论区的服务器。 */}
+    <slot name="head" />
     <title>{pageTitle}</title>
   </head>
   <body>

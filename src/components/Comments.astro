@@ -1,6 +1,7 @@
 ---
 // 文章末尾的评论区，由 giscus 显示，评论存在本仓库的 GitHub Discussions 里。
 // 没开 JS、或者 giscus 的脚本加载不了时，整块不显示。
+// 评论要现场从 giscus.app 和 GitHub 取，打开文章就开始加载（不等滚到这里），等待时先显示一行「正在加载评论……」。
 import { GISCUS } from '../consts';
 import { withBase } from '../utils/paths';
 
@@ -24,8 +25,8 @@ const config = {
   emitMetadata: '0',
   inputPosition: 'bottom',
   lang: 'zh-CN',
-  loading: 'lazy',
 };
+const giscusOrigin = GISCUS.origin;
 
 // 评论区的两套配色，跟着页面的浅色、深色切换。
 const themes = {
@@ -38,12 +39,30 @@ const themes = {
   GISCUS.categoryId && (
     <section class="post-section comments" aria-labelledby="comments-title" hidden>
       <h2 class="section-title" id="comments-title">评论</h2>
-      <div class="giscus" id="comments" />
-      <script is:inline define:vars={{ config, themes }}>
-        const giscusOrigin = 'https://giscus.app';
+      <div class="comments-frame">
+        <p class="comments-status" role="status">正在加载评论……</p>
+        <div class="giscus" id="comments" />
+      </div>
+      <script is:inline define:vars={{ config, themes, giscusOrigin }}>
         const root = document.documentElement;
         const section = document.currentScript.closest('.comments');
         const container = section.querySelector('.giscus');
+        const status = section.querySelector('.comments-status');
+
+        // giscus 的 iframe 加载好之前是透明的，先用上面那行灰字顶着；iframe 一出来（它里面也先显示同样一行字）就收起。
+        // 等了 15 秒还没出来，多半是网络慢或连不上 giscus，提示读者刷新。
+        const slowTimer = setTimeout(() => {
+          status.textContent = '评论还没加载出来，可以刷新一下试试';
+        }, 15000);
+        container.addEventListener(
+          'load',
+          () => {
+            clearTimeout(slowTimer);
+            status.hidden = true;
+          },
+          { capture: true, once: true },
+        );
+
         // giscus 在 iframe 里加载样式表，所以要给完整网址；用当前网址拼，换域名也不用改。
         const pageTheme = () =>
           new URL(root.dataset.theme === 'dark' ? themes.dark : themes.light, location.href).href;
@@ -85,6 +104,7 @@ const themes = {
         script.crossOrigin = 'anonymous';
         Object.assign(script.dataset, config, { theme: pageTheme() });
         script.addEventListener('error', () => {
+          clearTimeout(slowTimer);
           section.hidden = true;
         });
         section.hidden = false;

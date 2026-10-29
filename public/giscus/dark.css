@@ -121,9 +121,18 @@ main .gsc-header {
   display: none;
 }
 
-/* 加载时只留一行灰字，不放 GitHub 的章鱼猫动画。 */
+/* 加载时只留一行灰字，不放 GitHub 的章鱼猫动画。灰字靠左，
+   和 iframe 出来之前页面上那行「正在加载评论……」（src/styles/global.css 的 .comments-status）叠在同一个位置。 */
+main .gsc-loading {
+  align-items: flex-start;
+}
+
 main .gsc-loading-image {
   display: none;
+}
+
+main .gsc-loading-text {
+  text-align: left;
 }
 
 /* 评论框只留输入框，去掉「输入 / 预览」切换和等宽字体按钮，写完直接发。 */
