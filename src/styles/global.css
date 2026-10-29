@@ -511,6 +511,15 @@ time {
   line-height: 1.6;
 }
 
+/* 标签和「标签：」、阅读时长一样是灰色，这两行读起来是一块附注；下划线还在，悬停照样变陶土色。 */
+.post-meta .tag-list a {
+  color: var(--muted);
+}
+
+.post-meta .tag-list a:hover {
+  color: var(--accent-text);
+}
+
 /* 「N 分钟阅读 · N 次浏览」和标题上方的日期一样用等宽字。 */
 .post-meta .post-info {
   margin: 0;
