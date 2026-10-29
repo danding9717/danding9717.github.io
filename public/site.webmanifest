@@ -3,12 +3,12 @@
   "short_name": "Ethan Hu",
   "icons": [
     {
-      "src": "/site-icons/dan-hu-icon-192.png",
+      "src": "/site-icons/ethan-hu-icon-192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "/site-icons/dan-hu-icon-512.png",
+      "src": "/site-icons/ethan-hu-icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }

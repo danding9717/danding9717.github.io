@@ -16,7 +16,7 @@ const MAX_LINES = 3;
 const COLORS = { bg: '#f9f9f7', text: '#2d2d2b', muted: '#6b6b67', name: '#963f23' };
 const SANS = `'Noto Sans CJK SC', 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif`;
 const MONO = `'Noto Sans Mono CJK SC', 'JetBrains Mono', 'SF Mono', Menlo, 'DejaVu Sans Mono', monospace`;
-// 站标的那把伞，和 public/site-icons/dan-hu-safari-pinned.svg 是同一个形状（64×64）。
+// 站标的那把伞，和 public/site-icons/ethan-hu-safari-pinned.svg 是同一个形状（64×64）。
 const UMBRELLA = 'M8 28a24 24 0 0 1 48 0H8Zm24 6h8v15a11 11 0 0 1-22 0h8a3 3 0 0 0 6 0V34Z';
 
 // 中文和英文、数字之间加一个很窄的空格，和网页上 text-autospace 的效果一致。
