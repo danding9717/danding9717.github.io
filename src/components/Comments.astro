@@ -50,18 +50,30 @@ const themes = {
         const status = section.querySelector('.comments-status');
 
         // giscus 的 iframe 加载好之前是透明的，先用上面那行灰字顶着；iframe 一出来（它里面也先显示同样一行字）就收起。
-        // 等了 15 秒还没出来，多半是网络慢或连不上 giscus，提示读者刷新。
+        // iframe 出来不等于评论能用：连不上 giscus 时浏览器也会把报错页当成加载完。giscus 发来第一条消息才算真的好了。
+        // 15 秒还没等到，多半是网络慢或连不上：先藏起 iframe（位置留着），灰字改成提示刷新；之后等到了再换回来。
+        let slow = false;
         const slowTimer = setTimeout(() => {
+          slow = true;
           status.textContent = '评论还没加载出来，可以刷新一下试试';
+          status.hidden = false;
+          container.style.visibility = 'hidden';
         }, 15000);
         container.addEventListener(
           'load',
           () => {
-            clearTimeout(slowTimer);
-            status.hidden = true;
+            if (!slow) status.hidden = true;
           },
           { capture: true, once: true },
         );
+
+        function widgetReady() {
+          clearTimeout(slowTimer);
+          if (!slow) return;
+          slow = false;
+          status.hidden = true;
+          container.style.removeProperty('visibility');
+        }
 
         // giscus 在 iframe 里加载样式表，所以要给完整网址；用当前网址拼，换域名也不用改。
         const pageTheme = () =>
@@ -89,6 +101,7 @@ const themes = {
 
         window.addEventListener('message', (event) => {
           if (event.origin !== giscusOrigin || !event.data?.giscus) return;
+          widgetReady();
           frameReady = true;
           syncTheme();
         });
