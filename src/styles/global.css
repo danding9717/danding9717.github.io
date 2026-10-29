@@ -501,14 +501,35 @@ time {
   text-decoration: none;
 }
 
+/* 正文后面紧跟这篇文章自己的信息：「标签：……」和一行「N 分钟阅读 · N 次浏览」。 */
+.post-meta {
+  margin-top: 2em;
+}
+
+.post-meta .tag-list {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* 「N 分钟阅读 · N 次浏览」和标题上方的日期一样用等宽字。 */
+.post-meta .post-info {
+  margin: 0;
+  font-family: var(--font-mono);
+}
+
+.post-meta .tag-list + .post-info {
+  margin-top: 0.25em;
+}
+
+/* 分隔线以下是提到这篇的文章、更多文章和评论，分隔线上下和每块之间的留白差不多大，末尾读起来是一个整体。 */
 .post-footer {
   padding-top: 2em;
-  margin-top: 3em;
+  margin-top: 2em;
   border-top: 1px solid var(--line);
 }
 
-.post-section {
-  margin: 0 0 2.5em;
+.post-section + .post-section {
+  margin-top: 2em;
 }
 
 .backlinks {
@@ -555,26 +576,8 @@ time {
   line-height: 1.6;
 }
 
-.post-footer .tag-list {
-  color: var(--muted);
-}
-
-/* 文末的「N 分钟阅读 · N 次浏览」，紧跟在标签下面，和标题上方的日期一样用等宽字。 */
-.post-footer .post-info {
-  margin: 0;
-  font-family: var(--font-mono);
-}
-
-.post-footer .tag-list + .post-info {
-  margin-top: 0.4em;
-}
-
-/* 评论区（giscus）。iframe 里的配色在 public/giscus/，跟着页面的浅色、深色切换。 */
-.post-footer > * + .comments {
-  margin-top: 2.5em;
-}
-
-/* 登录 GitHub 回来时页面会跳到评论框，让上面的「评论」标题也露出来。 */
+/* 评论区（giscus）。iframe 里的配色和评论框样式在 public/giscus/，跟着页面的浅色、深色切换。
+   登录 GitHub 回来时页面会跳到评论框，让上面的「评论」标题也露出来。 */
 .comments .giscus {
   scroll-margin-top: 2.5rem;
 }

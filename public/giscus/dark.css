@@ -130,3 +130,43 @@ main .gsc-loading-image {
 main .gsc-comment-box-tabs {
   display: none;
 }
+
+/* 评论框只留一层细线：去掉外面的大框和底色，输入框和按钮跟页面上的文字左右对齐。 */
+main .gsc-comment-box:not(.gsc-comment-box-is-reply) {
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+main .gsc-comment-box:not(.gsc-comment-box-is-reply) .gsc-comment-box-main {
+  margin: 0;
+}
+
+main .gsc-comment-box:not(.gsc-comment-box-is-reply) .gsc-comment-box-bottom {
+  margin: 12px 0 0;
+}
+
+/* 输入框下面不放 Markdown 小图标和虚线，输入框就是一个完整的细线框。 */
+main .gsc-comment-box-textarea-extras {
+  display: none;
+}
+
+main .gsc-comment-box-write,
+main .gsc-comment-box-textarea {
+  border-radius: 8px;
+}
+
+main .gsc-comment-box-textarea {
+  display: block;
+  border-bottom-style: solid;
+}
+
+/* 输入框贴着 iframe 的边，焦点框画在框外会被裁掉一半，改成画在框里面。 */
+main .gsc-comment-box-write:focus-within {
+  box-shadow: none;
+}
+
+main .gsc-comment-box-textarea:focus {
+  border-color: var(--color-accent-fg);
+  box-shadow: inset 0 0 0 1px var(--color-accent-fg);
+}

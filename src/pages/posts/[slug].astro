@@ -109,6 +109,15 @@ const jsonLd = {
     <div class="prose">
       <Content />
     </div>
+
+    {/* 这篇文章自己的信息紧跟在正文后面；分隔线以下才是别的文章和评论。 */}
+    <div class="post-meta" data-pagefind-ignore>
+      {tags.length > 0 && <TagList tags={tags} label="标签：" />}
+      <p class="post-info">
+        <span>{getReadingMinutes(post)} 分钟阅读</span>
+        <ViewCount slug={post.id} />
+      </p>
+    </div>
   </article>
 
   <footer class="post-footer">
@@ -142,14 +151,6 @@ const jsonLd = {
         </section>
       )
     }
-
-    {tags.length > 0 && <TagList tags={tags} label="标签：" />}
-
-    {/* 阅读时长和浏览量放在文末，标题上方只留日期，让标题更突出。 */}
-    <p class="post-info">
-      <span>{getReadingMinutes(post)} 分钟阅读</span>
-      <ViewCount slug={post.id} />
-    </p>
 
     <Comments term={post.id} />
   </footer>
