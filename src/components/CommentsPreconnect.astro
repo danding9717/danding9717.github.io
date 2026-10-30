@@ -1,0 +1,15 @@
+---
+// 有评论区的页面放进 <head>（<CommentsPreconnect slot="head" />）：
+// 一进页面就和 giscus 的服务器连上线（查地址、握手），轮到评论区加载时省掉这一步。
+// 两条都要：评论脚本按跨域方式取，iframe 页面不是，浏览器给它们分开建连接。
+import { GISCUS } from '../consts';
+---
+
+{
+  GISCUS.categoryId && (
+    <>
+      <link rel="preconnect" href={GISCUS.origin} />
+      <link rel="preconnect" href={GISCUS.origin} crossorigin />
+    </>
+  )
+}

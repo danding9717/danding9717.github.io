@@ -1,5 +1,7 @@
 ---
 // 给 src/pages 里的 Markdown 页面（例如 now.md）用的版式，页头和文章页一致：日期、标题、副标题。
+import Comments from '../components/Comments.astro';
+import CommentsPreconnect from '../components/CommentsPreconnect.astro';
 import BaseLayout from './BaseLayout.astro';
 import { formatDate } from '../utils/posts';
 
@@ -8,16 +10,19 @@ interface Props {
     title: string;
     description?: string;
     updated?: string | Date;
+    /** 写了就在末尾加评论区，值是这一页在 Discussions 里对应的讨论（用页面路径，如 /now/），写好后别改，改了会和旧评论断开。 */
+    comments?: string;
   };
 }
 
-const { title, description, updated } = Astro.props.frontmatter;
+const { title, description, updated, comments } = Astro.props.frontmatter;
 // Markdown 页面的日期传到这里时已经变成字符串（如 2026-10-14T00:00:00.000Z），先转回 Date 再格式化。
 const updatedDate = updated ? new Date(updated) : undefined;
 const hasUpdated = updatedDate && !Number.isNaN(updatedDate.getTime());
 ---
 
 <BaseLayout title={title} description={description}>
+  {comments && <CommentsPreconnect slot="head" />}
   <header class="post-header">
     {
       hasUpdated && (
@@ -32,4 +37,11 @@ const hasUpdated = updatedDate && !Number.isNaN(updatedDate.getTime());
   <article class="prose">
     <slot />
   </article>
+  {
+    comments && (
+      <footer class="post-footer">
+        <Comments term={comments} />
+      </footer>
+    )
+  }
 </BaseLayout>

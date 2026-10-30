@@ -537,6 +537,11 @@ time {
   border-top: 1px solid var(--line);
 }
 
+/* Now 页和关于页的分隔线下只有评论区。评论区不显示时（没开 JS、giscus 加载不了），分隔线也不留。 */
+.post-footer:not(:has(> :not([hidden]))) {
+  display: none;
+}
+
 .post-section + .post-section {
   margin-top: 2em;
 }
