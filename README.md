@@ -27,9 +27,10 @@ npm run preview
 - `/page/2/`、`/page/3/`……：首页之后的每一批文章，「阅读更多」就是从这里取的；没开 JS 时点「阅读更多」直接打开这一页。每批篇数是 `src/utils/posts.ts` 里的 `PAGE_SIZE`。
 - `/posts/<文件名>/`：文章页。标题上方只有日期，下面是副标题（`description`，没写或和正文第一段重复时不显示）。二级标题达到 4 个时在正文上方放一个简单目录。正文后面紧跟这篇文章自己的信息：「标签：……」和一行「N 分钟阅读 · N 次浏览」（浏览量见下文「浏览量」）。再往下一条分隔线，下面依次是「提到这篇的文章」（反向链接）、「相关文章」（按共同标签，最多 3 篇；不够 3 篇时用最新文章补齐，标题改叫「更多文章」）和评论区（见下文「评论」）。
 - `/tags/`、`/tags/<标签>/`：按标签浏览。以前的 `/topics/` 会跳到 `/tags/`。
-- `/now/`：Now 页（最近在做什么），内容直接改 `src/pages/now.md`，改完顺手更新里面的 `updated` 日期。
+- `/now/`：Now 页（最近在做什么），内容直接改 `src/pages/now.md`，改完顺手更新里面的 `updated` 日期。末尾有评论区（见下文「评论」）。
 - `/archive/`：归档（页头第一个链接）。标题下是一条搜索框（Pagefind 全文搜索，有输入时用结果替换列表，按 Esc 清空），下面是精选（带「精选」标签的文章达到 3 篇才显示，最多 5 篇）、标签和按年份排列的全部文章。`/archive/?q=关键词` 可以直接打开搜索结果。
-- `/about/`、`/rss.xml`（全文输出）、`/sitemap-index.xml`、404 页。
+- `/about/`：关于页，末尾有评论区（见下文「评论」）。
+- `/rss.xml`（全文输出）、`/sitemap-index.xml`、404 页。
 - 全站没有页脚。旧的 `/search/` 跳转到 `/archive/`。RSS 地址写在关于页，也在每页 `<head>` 里供阅读器自动发现。
 
 文章之间的链接在 myblog 里写 `[[标题]]`，发布时换成 `/posts/<文章地址>/`。构建时会检查这些链接，链到不存在的文章会直接报错。
@@ -148,10 +149,11 @@ tags: ["财富", "精选"]
 
 ## 评论
 
-文章末尾的评论区用 [giscus](https://giscus.app/zh-CN)：评论存在本仓库的 GitHub Discussions 里（Announcements 分类），每篇文章对应一条讨论，有人发第一条评论时自动创建。读者用 GitHub 账号登录后评论。
+文章、Now 页和关于页末尾的评论区用 [giscus](https://giscus.app/zh-CN)：评论存在本仓库的 GitHub Discussions 里（Announcements 分类），每页对应一条讨论，各管各的，有人发第一条评论时自动创建。读者用 GitHub 账号登录后评论。
 
 - 设置在 `src/consts.ts` 的 `GISCUS`，几个值都来自 giscus.app 的配置页。`categoryId` 留空时不显示评论区。
 - 文章按地址名（slug）对应讨论，换域名、改标题都不影响已有评论；改了 slug 会和旧评论断开。
+- Now 页和关于页按页面路径对应讨论，Discussions 里的标题就是 `/now/` 和 `/about/`。Now 页的这个值写在 `src/pages/now.md` 的 `comments` 里（删掉这一行就不显示评论区），关于页的写在 `src/pages/about.astro`。值别改，改了会和旧评论断开。
 - 评论区的配色在 `public/giscus/light.css` 和 `dark.css`，跟着页面的浅色、深色切换。改了 `src/styles/themes.css` 的颜色时，这两个文件里的对应颜色也要一起改。这两个文件还去掉了评论框的「输入 / 预览」切换和外面那层大框，读者看到的就是一个细线输入框。
 - 删除、隐藏评论或锁定讨论，到仓库的 Discussions 页面操作。
 

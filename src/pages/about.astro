@@ -1,4 +1,6 @@
 ---
+import Comments from '../components/Comments.astro';
+import CommentsPreconnect from '../components/CommentsPreconnect.astro';
 import PageHeading from '../components/PageHeading.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import { AUTHOR_NAME } from '../consts';
@@ -15,6 +17,7 @@ const subscribe = {
 ---
 
 <BaseLayout title="关于" description={`关于 ${AUTHOR_NAME} 和这个博客。`}>
+  <CommentsPreconnect slot="head" />
   <PageHeading title="关于" />
   <article class="prose">
     <h2>我是谁</h2>
@@ -38,6 +41,11 @@ const subscribe = {
       <li><a href="https://feedly.com/">Feedly</a>：网页和手机都有，登录后点<a class="subscribe-link" href={subscribe.feedly}>订阅</a>。</li>
     </ul>
   </article>
+
+  {/* 关于页自己的评论串，和文章、Now 页的评论分开。 */}
+  <footer class="post-footer">
+    <Comments term="/about/" />
+  </footer>
 
   <script is:inline>
     // 「复制」按钮：没开 JS 时不显示，地址照样可以手动选中复制。

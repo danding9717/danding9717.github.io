@@ -3,6 +3,7 @@ layout: ../layouts/PageLayout.astro
 title: Now
 description: 我这个月在做的事
 updated: 2026-10-25
+comments: /now/
 ---
 
 ## 半年之约

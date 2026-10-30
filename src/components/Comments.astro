@@ -1,12 +1,16 @@
 ---
-// 文章末尾的评论区，由 giscus 显示，评论存在本仓库的 GitHub Discussions 里。
+// 文章、Now 页和关于页末尾的评论区，由 giscus 显示，评论存在本仓库的 GitHub Discussions 里。
 // 没开 JS、或者 giscus 的脚本加载不了时，整块不显示。
-// 评论要现场从 giscus.app 和 GitHub 取，打开文章就开始加载（不等滚到这里），等待时先显示一行「正在加载评论……」。
+// 评论要现场从 giscus.app 和 GitHub 取，打开页面就开始加载（不等滚到这里），等待时先显示一行「正在加载评论……」。
+// 用到的页面在 <head> 里放 <CommentsPreconnect slot="head" />，提前连上 giscus。
 import { GISCUS } from '../consts';
 import { withBase } from '../utils/paths';
 
 interface Props {
-  /** 这篇文章在 Discussions 里对应的讨论，用文章地址名（slug），换域名、改标题都不会和评论断开。 */
+  /**
+   * 这一页在 Discussions 里对应的讨论，每页一条。文章用地址名（slug），换域名、改标题都不会和评论断开；
+   * 其他页面用页面路径（如 /now/），带斜杠，不会和任何文章的地址名撞上。
+   */
   term: string;
 }
 
